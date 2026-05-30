@@ -8,6 +8,7 @@ import { registerRequiredWebhooks } from "@/utils/webhook.util";
 import { env } from "@/utils/env.util";
 import { logger } from "@/utils/logger.util";
 import { createId } from "@paralleldrive/cuid2";
+import { auth } from "@/lib/auth";
 
 const shopifyRouter = Router();
 
@@ -65,6 +66,7 @@ shopifyRouter.get("/callback", async (req: Request, res: Response): Promise<void
     const shopDomain = session.shop; // e.g. "storename.myshopify.com"
     const accessToken = session.accessToken!;
     const encryptedToken = encrypt(accessToken);
+    let userId: string;
 
     logger.info(`[OAuth] Callback success for shop: ${shopDomain}`);
 
@@ -78,6 +80,8 @@ shopifyRouter.get("/callback", async (req: Request, res: Response): Promise<void
     });
 
     if (existingUser) {
+      userId = existingUser.id;
+
       // Update tokens on existing record
       await database
         .update(users)
@@ -97,6 +101,8 @@ shopifyRouter.get("/callback", async (req: Request, res: Response): Promise<void
     } else {
       // Create minimal user record for new merchants
       const newUserId = createId();
+      userId = newUserId;
+
       await database.insert(users).values({
         id: newUserId,
         name: shopDomain,
@@ -130,6 +136,26 @@ shopifyRouter.get("/callback", async (req: Request, res: Response): Promise<void
       // Non-fatal — log but do not block the OAuth flow
       logger.error(`[OAuth] Webhook registration failed for ${shopDomain}:`, whErr.message);
     }
+
+    const authContext = await auth.$context;
+    const authSession = await authContext.internalAdapter.createSession(
+      userId,
+      {
+        context: authContext,
+        headers: new Headers({
+          "user-agent": req.get("user-agent") || "",
+        }),
+      } as any
+    );
+
+    const isProduction = process.env.NODE_ENV === "production";
+    res.cookie("better-auth.session_token", authSession.token, {
+      httpOnly: isProduction,
+      secure: isProduction,
+      sameSite: isProduction ? "none" : "lax",
+      maxAge: 60 * 60 * 24 * 7 * 1000, // 7 days in ms
+      path: "/",
+    });
 
     // Redirect merchant to dashboard
     res.redirect(`${env.FRONTEND_DOMAIN}/user/customer-management`);
