@@ -151,13 +151,13 @@ shopifyRouter.get("/callback", async (req: Request, res: Response): Promise<void
       } as any
     );
 
-    const isProduction = process.env.NODE_ENV === "production";
     res.cookie("better-auth.session_token", authSession.token, {
-      httpOnly: isProduction,
-      secure: isProduction,
-      sameSite: isProduction ? "none" : "lax",
-      maxAge: 60 * 60 * 24 * 7 * 1000, // 7 days in ms
+      httpOnly: true,
+      secure: true,
+      sameSite: "none",
+      maxAge: 60 * 60 * 24 * 7 * 1000,
       path: "/",
+      domain: ".ecomprotect.co.uk", // leading dot covers all subdomains
     });
 
     // Redirect merchant to dashboard
