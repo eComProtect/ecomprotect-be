@@ -151,17 +151,8 @@ shopifyRouter.get("/callback", async (req: Request, res: Response): Promise<void
       } as any
     );
 
-    res.cookie("better-auth.session_token", authSession.token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: "none",
-      maxAge: 60 * 60 * 24 * 7 * 1000,
-      path: "/",
-      domain: ".ecomprotect.co.uk", // leading dot covers all subdomains
-    });
-
-    // Redirect merchant to dashboard
-    res.redirect(`${env.FRONTEND_DOMAIN}/user/customer-management`);
+    // Redirect merchant to frontend callback with token as URL param
+    res.redirect(`${env.FRONTEND_DOMAIN}/auth/callback?token=${authSession.token}`);
   } catch (err: any) {
     logger.error("[OAuth] /callback error:", err.message);
     res.status(500).json({ error: "Failed to complete Shopify OAuth", details: err.message });
