@@ -62,6 +62,9 @@ shopifyRouter.get("/callback", async (req: Request, res: Response): Promise<void
       rawResponse: res,
     });
 
+    // Prevent SDK embedded redirect
+    res.removeHeader('location');
+
     const session = callbackResponse.session;
     const shopDomain = session.shop; // e.g. "storename.myshopify.com"
     const accessToken = session.accessToken!;
