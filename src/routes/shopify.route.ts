@@ -131,8 +131,12 @@ shopifyRouter.get("/callback", async (req: Request, res: Response): Promise<void
         );
       }
     } catch (whErr: any) {
-      // Non-fatal — log but do not block the OAuth flow
-      logger.error(`[OAuth] Webhook registration failed for ${shopDomain}:`, whErr.message);
+      // Non-fatal — log but do not block the OAuth flow. Surface the real cause:
+      // for axios errors the useful detail is in response.status / response.data.
+      const detail = whErr?.response
+        ? `status=${whErr.response.status} data=${JSON.stringify(whErr.response.data)}`
+        : whErr?.message || String(whErr);
+      logger.error(`[OAuth] Webhook registration failed for ${shopDomain}: ${detail}`);
     }
 
     // Redirect back into the embedded app. We pass shop + host so App Bridge can
