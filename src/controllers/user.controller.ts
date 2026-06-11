@@ -9,6 +9,31 @@ import { Request, Response } from "express";
 import formidable from "formidable";
 import status from "http-status";
 
+/**
+ * Returns the currently authenticated user/store. Works for both auth strategies
+ * (App Bridge session token for embedded merchants, or the better-auth cookie for the
+ * standalone site) because protectRoute populates req.user for either. The encrypted
+ * Shopify token is never sent to the client.
+ */
+export const meController = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  if (!req.user) {
+    res.status(status.UNAUTHORIZED).json({ message: "Not authenticated" });
+    return;
+  }
+
+  // Omit the encrypted Shopify token from the response.
+  const { shopify_access_token: _omit, ...safeUser } =
+    req.user as Record<string, unknown>;
+
+  res.status(status.OK).json({
+    message: "Current user fetched successfully",
+    data: safeUser,
+  });
+};
+
 
 
 export const fetchStoresController = async (
