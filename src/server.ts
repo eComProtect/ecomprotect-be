@@ -47,7 +47,21 @@ const io = new Server(httpServer, {
 swagger(app);
 prepareMigration(isProduction);
 
-app.use(helmet());
+// Helmet, configured so Shopify Admin can embed this app in an iframe.
+// - frame-ancestors allows framing only by Shopify (any *.myshopify.com store + admin.shopify.com)
+// - frameguard:false removes the default `X-Frame-Options: DENY`, which would otherwise
+//   block embedding entirely (CSP frame-ancestors supersedes it in modern browsers).
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      useDefaults: true,
+      directives: {
+        "frame-ancestors": ["https://*.myshopify.com", "https://admin.shopify.com"],
+      },
+    },
+    frameguard: false,
+  })
+);
 io.on("connection", registerEvents);
 app.use(express.static("public"));
 app.use(assignSocketToReqIO(io));
