@@ -53,6 +53,11 @@ interface RequiredWebhookRegistrationSummary {
 
 const SHOPIFY_ADMIN_API_VERSION = "2025-07";
 
+// NOTE: The GDPR/compliance topics (customers/data_request, customers/redact,
+// shop/redact) are intentionally NOT registered here. Shopify does not accept them
+// via the webhook API (it returns 404 "Could not find the webhook topic ...") — they
+// are mandatory *compliance webhooks* configured in the Partner Dashboard
+// (App setup → Compliance webhooks). Only operational webhooks are registered via API.
 const requiredWebhookDefinitions: RequiredWebhookDefinition[] = [
   {
     key: "ORDERS_CREATE",
@@ -63,21 +68,6 @@ const requiredWebhookDefinitions: RequiredWebhookDefinition[] = [
     key: "REFUNDS_CREATE",
     topic: "refunds/create",
     path: "/api/webhook/refunds/create",
-  },
-  {
-    key: "CUSTOMERS_DATA_REQUEST",
-    topic: "customers/data_request",
-    path: "/api/webhook/customers/data-request",
-  },
-  {
-    key: "CUSTOMERS_REDACT",
-    topic: "customers/redact",
-    path: "/api/webhook/customers/redact",
-  },
-  {
-    key: "SHOP_REDACT",
-    topic: "shop/redact",
-    path: "/api/webhook/shop/redact",
   },
   {
     key: "APP_UNINSTALLED",
