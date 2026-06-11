@@ -8,7 +8,6 @@ import { registerRequiredWebhooks } from "@/utils/webhook.util";
 import { env } from "@/utils/env.util";
 import { logger } from "@/utils/logger.util";
 import { createId } from "@paralleldrive/cuid2";
-import { auth } from "@/lib/auth";
 
 const shopifyRouter = Router();
 
@@ -69,7 +68,6 @@ shopifyRouter.get("/callback", async (req: Request, res: Response): Promise<void
     const shopDomain = session.shop; // e.g. "storename.myshopify.com"
     const accessToken = session.accessToken!;
     const encryptedToken = encrypt(accessToken);
-    let userId: string;
 
     logger.info(`[OAuth] Callback success for shop: ${shopDomain}`);
 
@@ -83,8 +81,6 @@ shopifyRouter.get("/callback", async (req: Request, res: Response): Promise<void
     });
 
     if (existingUser) {
-      userId = existingUser.id;
-
       // Update tokens on existing record
       await database
         .update(users)
@@ -104,7 +100,6 @@ shopifyRouter.get("/callback", async (req: Request, res: Response): Promise<void
     } else {
       // Create minimal user record for new merchants
       const newUserId = createId();
-      userId = newUserId;
 
       await database.insert(users).values({
         id: newUserId,
@@ -140,19 +135,12 @@ shopifyRouter.get("/callback", async (req: Request, res: Response): Promise<void
       logger.error(`[OAuth] Webhook registration failed for ${shopDomain}:`, whErr.message);
     }
 
-    const authContext = await auth.$context;
-    const authSession = await authContext.internalAdapter.createSession(
-      userId,
-      {
-        context: authContext,
-        headers: new Headers({
-          "user-agent": req.get("user-agent") || "",
-        }),
-      } as any
-    );
-
-    // Redirect merchant to frontend callback with token as URL param
-    res.redirect(`${env.FRONTEND_DOMAIN}/auth/callback?token=${authSession.token}`);
+    // Redirect back into the embedded app. We pass shop + host so App Bridge can
+    // boot inside the Shopify Admin iframe; the frontend then authenticates every
+    // request with a short-lived App Bridge session token (no token in the URL).
+    const host = (req.query.host as string | undefined) ?? "";
+    const params = new URLSearchParams({ shop: shopDomain, host });
+    res.redirect(`${env.FRONTEND_DOMAIN}?${params.toString()}`);
   } catch (err: any) {
     logger.error("[OAuth] /callback error:", err.message);
     res.status(500).json({ error: "Failed to complete Shopify OAuth", details: err.message });

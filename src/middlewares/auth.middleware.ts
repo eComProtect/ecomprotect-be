@@ -1,8 +1,9 @@
 import { Request, Response, NextFunction } from "express";
 import { auth } from "@/lib/auth";
+import { shopify } from "@/configs/shopify.config";
 import { users } from "@/schema/schema";
 import { database } from "@/configs/connection.config";
-import { eq } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
 import status from "http-status";
 
 type User = typeof users.$inferSelect;
@@ -35,6 +36,48 @@ const findUserByAccessToken = async (
   return userRecord[0] || null;
 };
 
+const findUserByShopDomain = async (
+  shopDomain: string
+): Promise<User | null> => {
+  const userRecord = await database
+    .select()
+    .from(users)
+    .where(
+      or(
+        eq(users.shopify_url, `https://${shopDomain}`),
+        eq(users.shopify_url, shopDomain)
+      )
+    );
+
+  return userRecord[0] || null;
+};
+
+/**
+ * Resolves the store/user from a Shopify App Bridge session token (a short-lived JWT
+ * sent by the embedded frontend). Embedded apps cannot rely on third-party cookies
+ * inside the Admin iframe, so this is the primary auth path for merchants.
+ *
+ * decodeSessionToken verifies the JWT signature against SHOPIFY_API_SECRET and checks
+ * expiry; its `dest` claim is the shop origin, e.g. "https://storename.myshopify.com".
+ */
+const findUserBySessionToken = async (token: string): Promise<User | null> => {
+  try {
+    const payload = await shopify.session.decodeSessionToken(token);
+    const dest = payload.dest; // e.g. "https://storename.myshopify.com"
+    const shopDomain = dest.replace(/^https?:\/\//, "");
+
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9\-]*\.myshopify\.com$/.test(shopDomain)) {
+      return null;
+    }
+
+    return await findUserByShopDomain(shopDomain);
+  } catch {
+    // Not a valid Shopify session token (expired, tampered, or a different bearer
+    // scheme). Fall through to the other auth strategies.
+    return null;
+  }
+};
+
 export const protectRoute = async (
   req: Request,
   res: Response,
@@ -45,9 +88,17 @@ export const protectRoute = async (
     const apiKeyHeader = req.headers["x-api-key"];
 
     if (authorizationHeader && authorizationHeader.startsWith("Bearer ")) {
-      const accessToken = authorizationHeader.substring(7);
-      const user = await findUserByAccessToken(accessToken);
+      const bearer = authorizationHeader.substring(7);
 
+      // 1) Embedded apps: an App Bridge session token (JWT) identifying the shop.
+      const sessionUser = await findUserBySessionToken(bearer);
+      if (sessionUser) {
+        req.user = sessionUser;
+        return next();
+      }
+
+      // 2) Legacy / server-to-server: a raw Shopify access token.
+      const user = await findUserByAccessToken(bearer);
       if (user) {
         req.user = user;
         return next();
