@@ -13,14 +13,22 @@ import {
   resolvePlanAmount,
 } from "@/utils/billing.util";
 
-/** GET /api/billing/plans — packages with prices resolved for this merchant's tier. */
+/**
+ * GET /api/billing/plans — packages with prices resolved for an order tier.
+ * The tier comes from ?orders=<range> (what the merchant picks on the billing page),
+ * falling back to the stored users.average_orders_per_month.
+ */
 export const plansController = async (
   req: Request,
   res: Response
 ): Promise<void> => {
+  const orders =
+    (req.query.orders as string | undefined) ||
+    req.user?.average_orders_per_month;
+
   res.status(status.OK).json({
     message: "Plans fetched successfully",
-    data: plansForMerchant(req.user?.average_orders_per_month),
+    data: plansForMerchant(orders),
   });
 };
 
@@ -59,7 +67,7 @@ export const subscribeController = async (
   try {
     const shopUrl = req.user?.shopify_url;
     const encryptedToken = req.user?.shopify_access_token;
-    const { package: planName, host } = req.body ?? {};
+    const { package: planName, host, orders } = req.body ?? {};
 
     if (!shopUrl || !encryptedToken) {
       res.status(status.BAD_REQUEST).json({ message: "Store is not connected." });
@@ -70,10 +78,12 @@ export const subscribeController = async (
       return;
     }
 
-    const resolved = resolvePlanAmount(
-      planName,
-      req.user?.average_orders_per_month
-    );
+    // The order tier drives the price: prefer what the merchant just selected,
+    // else the previously stored value.
+    const ordersTier: string | undefined =
+      orders || req.user?.average_orders_per_month || undefined;
+
+    const resolved = resolvePlanAmount(planName, ordersTier);
     if (!resolved) {
       res.status(status.BAD_REQUEST).json({ message: "Unknown package." });
       return;
@@ -100,12 +110,14 @@ export const subscribeController = async (
       returnUrl,
     });
 
-    // Record the merchant's intended plan/package (status is confirmed via Shopify).
+    // Record the merchant's intended plan/package and chosen order tier
+    // (subscription status itself is always confirmed live via Shopify).
     await database
       .update(users)
       .set({
         package: resolved.plan.name,
         plan: String(resolved.amount),
+        ...(ordersTier ? { average_orders_per_month: ordersTier } : {}),
         updatedAt: new Date(),
       })
       .where(eq(users.id, req.user!.id));
