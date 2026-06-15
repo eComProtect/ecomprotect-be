@@ -8,7 +8,8 @@ type RestWebhookTopic =
   | "customers/data_request"
   | "customers/redact"
   | "shop/redact"
-  | "app/uninstalled";
+  | "app/uninstalled"
+  | "app_subscriptions/update";
 
 type RequiredWebhookKey =
   | "ORDERS_CREATE"
@@ -16,7 +17,8 @@ type RequiredWebhookKey =
   | "CUSTOMERS_DATA_REQUEST"
   | "CUSTOMERS_REDACT"
   | "SHOP_REDACT"
-  | "APP_UNINSTALLED";
+  | "APP_UNINSTALLED"
+  | "APP_SUBSCRIPTIONS_UPDATE";
 
 interface RequiredWebhookDefinition {
   key: RequiredWebhookKey;
@@ -73,6 +75,11 @@ const requiredWebhookDefinitions: RequiredWebhookDefinition[] = [
     key: "APP_UNINSTALLED",
     topic: "app/uninstalled",
     path: "/api/webhook/app/uninstalled",
+  },
+  {
+    key: "APP_SUBSCRIPTIONS_UPDATE",
+    topic: "app_subscriptions/update",
+    path: "/api/webhook/app/subscriptions-update",
   },
 ];
 

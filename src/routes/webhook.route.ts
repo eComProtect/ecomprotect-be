@@ -9,6 +9,7 @@ import {
   handleShopRedact,
 } from "@/webhooks/gdpr.webhook";
 import { handleAppUninstalled } from "@/webhooks/uninstall.webhook";
+import { handleAppSubscriptionUpdate } from "@/webhooks/subscription.webhook";
 
 const webhookRouter = Router();
 
@@ -47,6 +48,11 @@ webhookRouter.post(
   "/app/uninstalled",
   ...webhookMiddleware,
   handleAppUninstalled
+);
+webhookRouter.post(
+  "/app/subscriptions-update",
+  ...webhookMiddleware,
+  handleAppSubscriptionUpdate
 );
 
 export default webhookRouter;
