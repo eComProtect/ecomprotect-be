@@ -5,6 +5,12 @@ import { Request, Response } from "express";
 import status from "http-status";
 import { eq } from "drizzle-orm";
 import { decrypt } from "@/service/encryption.service";
+import {
+  isShopifyTokenExpired,
+  attemptTokenMigration,
+  shopifyReAuthUrl,
+  SHOPIFY_TOKEN_EXPIRED_RESPONSE,
+} from "@/utils/shopify-token.util";
 
 export const getRiskyOrders = async (req: Request, res: Response) => {
   try {
@@ -12,7 +18,23 @@ export const getRiskyOrders = async (req: Request, res: Response) => {
     const customerId = req.query.customerId as string;
     const storeUrl = req.user?.shopify_url;
     const getAccessToken = req.user?.shopify_access_token;
-    const accessToken = getAccessToken ? decrypt(getAccessToken) : null;
+    let accessToken = getAccessToken ? decrypt(getAccessToken) : null;
+
+    if (isShopifyTokenExpired(req.user?.shopify_token_expires_at)) {
+      const migrated = await attemptTokenMigration({
+        shopDomain: storeUrl ?? "",
+        encryptedToken: getAccessToken ?? "",
+        userId: storeId ?? "",
+      });
+      if (!migrated) {
+        res.status(status.UNAUTHORIZED).json({
+          ...SHOPIFY_TOKEN_EXPIRED_RESPONSE,
+          reAuthUrl: shopifyReAuthUrl(storeUrl ?? ""),
+        });
+        return;
+      }
+      accessToken = migrated.accessToken;
+    }
 
     if (!storeId || !customerId || !storeUrl || !accessToken) {
       res.status(status.BAD_REQUEST).json({

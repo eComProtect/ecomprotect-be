@@ -13,6 +13,12 @@ import {
   countLossEvents,
   hasReturnAccessError,
 } from "@/service/shopify-loss-events.service";
+import {
+  isShopifyTokenExpired,
+  attemptTokenMigration,
+  shopifyReAuthUrl,
+  SHOPIFY_TOKEN_EXPIRED_RESPONSE,
+} from "@/utils/shopify-token.util";
 
 /** Check if customer email is in the store's exclusion list (Additional Configuration). */
 function isEmailExcluded(
@@ -54,9 +60,26 @@ export const getCustomerRefundsAcrossStores = async (
       res
         .status(status.UNAUTHORIZED)
         .json({ error: "Missing Shopify credentials or Store ID" });
+      return;
     }
 
-    const accessToken = await decrypt(getAccessToken!);
+    let accessToken = decrypt(getAccessToken!);
+
+    if (isShopifyTokenExpired(data?.shopify_token_expires_at)) {
+      const migrated = await attemptTokenMigration({
+        shopDomain: storeUrl,
+        encryptedToken: getAccessToken!,
+        userId: storeId!,
+      });
+      if (!migrated) {
+        res.status(status.UNAUTHORIZED).json({
+          ...SHOPIFY_TOKEN_EXPIRED_RESPONSE,
+          reAuthUrl: shopifyReAuthUrl(storeUrl),
+        });
+        return;
+      }
+      accessToken = migrated.accessToken;
+    }
 
     const settingsResult = await database
       .select()

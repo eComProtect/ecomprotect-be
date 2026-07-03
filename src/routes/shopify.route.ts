@@ -67,6 +67,7 @@ shopifyRouter.get("/callback", async (req: Request, res: Response): Promise<void
     const session = callbackResponse.session;
     const shopDomain = session.shop; // e.g. "storename.myshopify.com"
     const accessToken = session.accessToken!;
+    const tokenExpiresAt = session.expires ?? null;
     const encryptedToken = encrypt(accessToken);
 
     logger.info(`[OAuth] Callback success for shop: ${shopDomain}`);
@@ -86,6 +87,7 @@ shopifyRouter.get("/callback", async (req: Request, res: Response): Promise<void
         .update(users)
         .set({
           shopify_access_token: encryptedToken,
+          shopify_token_expires_at: tokenExpiresAt,
           shopify_api_key: env.SHOPIFY_API_KEY,
           updatedAt: new Date(),
         })
@@ -108,6 +110,7 @@ shopifyRouter.get("/callback", async (req: Request, res: Response): Promise<void
         emailVerified: false,
         shopify_url: `https://${shopDomain}`,
         shopify_access_token: encryptedToken,
+        shopify_token_expires_at: tokenExpiresAt,
         shopify_api_key: env.SHOPIFY_API_KEY,
         createdAt: new Date(),
         updatedAt: new Date(),

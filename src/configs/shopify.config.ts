@@ -19,7 +19,7 @@ export const shopify = shopifyApi({
     "write_fulfillments",
   ],
   hostName: env.SHOPIFY_APP_URL.replace(/^https?:\/\//, ""),
-  apiVersion: ApiVersion.July25,
+  apiVersion: ApiVersion.July26,
   isEmbeddedApp: true,
   logger: {
     level: LogSeverity.Warning,

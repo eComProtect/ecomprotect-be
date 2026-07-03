@@ -39,7 +39,7 @@
     "@getbrevo/brevo": "^2.5.0",
     "@paralleldrive/cuid2": "^2.2.2",
     "@sendgrid/mail": "^8.1.5",
-    "@shopify/shopify-api": "^11.14.1",
+    "@shopify/shopify-api": "^13.1.0",
     "@types/swagger-jsdoc": "^6.0.2",
     "axios": "^1.5.1",
     "bcrypt": "^6.0.0",

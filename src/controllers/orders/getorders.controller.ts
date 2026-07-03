@@ -5,6 +5,12 @@ import status from "http-status";
 import { eq } from "drizzle-orm";
 import { fulfillmentOrders, orderItems, orders } from "@/schema/schema";
 import { decrypt } from "@/service/encryption.service";
+import {
+  isShopifyTokenExpired,
+  attemptTokenMigration,
+  shopifyReAuthUrl,
+  SHOPIFY_TOKEN_EXPIRED_RESPONSE,
+} from "@/utils/shopify-token.util";
 
 /**
  *
@@ -16,7 +22,23 @@ export const getOrders = async (req: Request, res: Response) => {
 
     const storeUrl = data?.shopify_url;
     const getAccessToken = data?.shopify_access_token;
-    const accessToken = getAccessToken ? decrypt(getAccessToken) : null;
+    let accessToken = getAccessToken ? decrypt(getAccessToken) : null;
+
+    if (isShopifyTokenExpired(data?.shopify_token_expires_at)) {
+      const migrated = await attemptTokenMigration({
+        shopDomain: storeUrl ?? "",
+        encryptedToken: getAccessToken ?? "",
+        userId: data?.id ?? "",
+      });
+      if (!migrated) {
+        res.status(status.UNAUTHORIZED).json({
+          ...SHOPIFY_TOKEN_EXPIRED_RESPONSE,
+          reAuthUrl: shopifyReAuthUrl(storeUrl ?? ""),
+        });
+        return;
+      }
+      accessToken = migrated.accessToken;
+    }
 
     let order: any[] = [];
     // let hasNextPage = true;

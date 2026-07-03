@@ -5,6 +5,12 @@ import { database } from "@/configs/connection.config";
 import { users } from "@/schema/schema";
 import { eq } from "drizzle-orm";
 import { decrypt } from "@/service/encryption.service";
+import {
+  isShopifyTokenExpired,
+  attemptTokenMigration,
+  shopifyReAuthUrl,
+  SHOPIFY_TOKEN_EXPIRED_RESPONSE,
+} from "@/utils/shopify-token.util";
 
 /**
  * Fetch refund history of a specific customer from Shopify
@@ -36,7 +42,23 @@ export const getCustomerRefundHistoryFromShopify = async (
 
     const storeUrl = userData?.shopify_url;
     const getAccessToken = userData?.shopify_access_token;
-    const accessToken = getAccessToken ? decrypt(getAccessToken) : null;
+    let accessToken = getAccessToken ? decrypt(getAccessToken) : null;
+
+    if (isShopifyTokenExpired(userData?.shopify_token_expires_at)) {
+      const migrated = await attemptTokenMigration({
+        shopDomain: storeUrl ?? "",
+        encryptedToken: getAccessToken ?? "",
+        userId: userData.id,
+      });
+      if (!migrated) {
+        res.status(status.UNAUTHORIZED).json({
+          ...SHOPIFY_TOKEN_EXPIRED_RESPONSE,
+          reAuthUrl: shopifyReAuthUrl(storeUrl ?? ""),
+        });
+        return;
+      }
+      accessToken = migrated.accessToken;
+    }
 
     console.log("customerId", customerId);
     console.log("Query ID:---->", req.query);
