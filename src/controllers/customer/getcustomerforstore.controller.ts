@@ -101,7 +101,6 @@ export const getCustomerRefundsAcrossStores = async (
           edges {
             node {
               id
-              displayName
               firstName
               lastName
               email
@@ -277,7 +276,7 @@ export const getCustomerRefundsAcrossStores = async (
 
       const customerDataToUpsert = {
         id: node.id,
-        name: node.displayName ?? "N/A",
+        name: `${node.firstName ?? ""} ${node.lastName ?? ""}`.trim() || "N/A",
         firstName: node.firstName ?? "",
         surname: node.lastName ?? "",
         email: node.email ?? "N/A",

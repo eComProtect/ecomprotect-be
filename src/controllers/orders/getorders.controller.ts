@@ -156,7 +156,7 @@ export const getOrders = async (req: Request, res: Response) => {
         await database
           .update(orders)
           .set({
-            name: node.displayName,
+            name: `${node.customer.firstName ?? ""} ${node.customer.lastName ?? ""}`.trim(),
             totalAmount: node.totalPriceSet.shopMoney.amount,
             currency: node.totalPriceSet.shopMoney.currencyCode,
             customerId: node.customer.id,

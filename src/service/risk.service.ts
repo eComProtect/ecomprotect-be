@@ -74,7 +74,8 @@ const buildCustomerByIdQuery = (includeReturns: boolean) => `
   query($customerId: ID!) {
     customer(id: $customerId) {
       id
-      displayName
+      firstName
+      lastName
       email
       phone
       orders(first: 100) {
@@ -94,7 +95,8 @@ const buildCustomerByEmailQuery = (includeReturns: boolean) => `
       edges {
         node {
           id
-          displayName
+          firstName
+          lastName
           email
           phone
           orders(first: 100) {

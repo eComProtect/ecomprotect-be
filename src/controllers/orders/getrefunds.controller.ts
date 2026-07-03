@@ -80,7 +80,8 @@ export const getCustomerRefundHistoryFromShopify = async (
       {
         customer(id: "${customerId}") {
           id
-          displayName
+          firstName
+          lastName
           email
           orders(first: 50, sortKey: CREATED_AT, reverse: true) {
             edges {
@@ -161,7 +162,7 @@ export const getCustomerRefundHistoryFromShopify = async (
     res.status(status.OK).json({
       customer: {
         id: customer.id,
-        name: customer.displayName,
+        name: `${customer.firstName ?? ""} ${customer.lastName ?? ""}`.trim(),
         email: customer.email,
       },
       totalRefunds: refundHistory.length,
