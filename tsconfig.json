@@ -14,7 +14,8 @@
     "strictPropertyInitialization": false,
     "forceConsistentCasingInFileNames": true,
     "paths": {
-      "@/*": ["*"]
+      "@/*": ["*"],
+      "@shopify/shopify-api/adapters/node": ["../node_modules/@shopify/shopify-api/dist/ts/adapters/node/index"]
     }
   },
   "include": ["src"],
