@@ -7,6 +7,12 @@ import { eq } from "drizzle-orm";
 import axios from "axios";
 import { logActivity } from "@/service/logactivity.service";
 import { decrypt } from "@/service/encryption.service";
+import {
+  isShopifyTokenExpired,
+  attemptTokenMigration,
+  shopifyReAuthUrl,
+  SHOPIFY_TOKEN_EXPIRED_RESPONSE,
+} from "@/utils/shopify-token.util";
 
 export const blockCustomer = async (
   req: Request,
@@ -16,7 +22,23 @@ export const blockCustomer = async (
     const { customerId } = req.query;
     const storeUrl = req.user?.shopify_url;
     const getStoreToken = req.user?.shopify_access_token;
-    const storeToken = getStoreToken ? decrypt(getStoreToken) : null;
+    let storeToken = getStoreToken ? decrypt(getStoreToken) : null;
+
+    if (isShopifyTokenExpired(req.user?.shopify_token_expires_at)) {
+      const migrated = await attemptTokenMigration({
+        shopDomain: storeUrl ?? "",
+        encryptedToken: getStoreToken ?? "",
+        userId: req.user?.id ?? "",
+      });
+      if (!migrated) {
+        res.status(status.UNAUTHORIZED).json({
+          ...SHOPIFY_TOKEN_EXPIRED_RESPONSE,
+          reAuthUrl: shopifyReAuthUrl(storeUrl ?? ""),
+        });
+        return;
+      }
+      storeToken = migrated.accessToken;
+    }
 
     if (!customerId) {
       res
@@ -91,7 +113,23 @@ export const unblockCustomer = async (
     const { customerId } = req.query;
     const storeUrl = req.user?.shopify_url;
     const getStoreToken = req.user?.shopify_access_token;
-    const storeToken = getStoreToken ? decrypt(getStoreToken) : null;
+    let storeToken = getStoreToken ? decrypt(getStoreToken) : null;
+
+    if (isShopifyTokenExpired(req.user?.shopify_token_expires_at)) {
+      const migrated = await attemptTokenMigration({
+        shopDomain: storeUrl ?? "",
+        encryptedToken: getStoreToken ?? "",
+        userId: req.user?.id ?? "",
+      });
+      if (!migrated) {
+        res.status(status.UNAUTHORIZED).json({
+          ...SHOPIFY_TOKEN_EXPIRED_RESPONSE,
+          reAuthUrl: shopifyReAuthUrl(storeUrl ?? ""),
+        });
+        return;
+      }
+      storeToken = migrated.accessToken;
+    }
 
     if (!customerId) {
       res
