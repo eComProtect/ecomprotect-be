@@ -49,6 +49,7 @@ export const getCustomerRefundHistoryFromShopify = async (
         shopDomain: storeUrl ?? "",
         encryptedToken: getAccessToken ?? "",
         userId: userData.id,
+        expiresAt: userData?.shopify_token_expires_at,
       });
       if (!migrated) {
         res.status(status.UNAUTHORIZED).json({

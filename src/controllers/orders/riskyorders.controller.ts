@@ -25,6 +25,7 @@ export const getRiskyOrders = async (req: Request, res: Response) => {
         shopDomain: storeUrl ?? "",
         encryptedToken: getAccessToken ?? "",
         userId: storeId ?? "",
+        expiresAt: req.user?.shopify_token_expires_at,
       });
       if (!migrated) {
         res.status(status.UNAUTHORIZED).json({

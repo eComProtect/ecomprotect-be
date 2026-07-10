@@ -22,19 +22,36 @@ export function isShopifyTokenExpired(
 }
 
 /**
- * Attempts to automatically migrate a non-expiring (or expired) offline token
- * to a new expiring offline token using Shopify's token exchange endpoint.
- * No merchant redirect required.
+ * Attempts to automatically migrate a non-expiring legacy offline token to a
+ * new expiring offline token using Shopify's token exchange endpoint. No
+ * merchant redirect required.
  *
- * Returns the new decrypted access token on success, null if migration fails.
- * On success, also updates the users table with the new token + expiry.
+ * Only applies to genuinely non-expiring tokens (expiresAt was never set).
+ * A modern expiring token that has simply reached its expiry is a different
+ * situation — Shopify's migrate-to-expiring endpoint exists to convert a
+ * legacy non-expiring token, not to refresh an already-expiring one that
+ * expired, and rejects that call with a 400. Offline tokens have no refresh
+ * flow once expired; the merchant must re-run OAuth. Callers pass the
+ * current expiresAt so this can skip the doomed API call entirely and let
+ * the caller fall straight through to its re-auth response.
+ *
+ * Returns the new decrypted access token on success, null if migration
+ * wasn't attempted or failed. On success, also updates the users table with
+ * the new token + expiry.
  */
 export async function attemptTokenMigration(params: {
   shopDomain: string;
   encryptedToken: string;
   userId: string;
+  expiresAt?: Date | null;
 }): Promise<{ accessToken: string; expiresAt: Date | null } | null> {
-  const { shopDomain, encryptedToken, userId } = params;
+  const { shopDomain, encryptedToken, userId, expiresAt } = params;
+
+  if (expiresAt) {
+    // Already a modern expiring token, just past its expiry — migration
+    // isn't the right recovery here, re-auth is.
+    return null;
+  }
 
   try {
     const decryptedToken = decrypt(encryptedToken);

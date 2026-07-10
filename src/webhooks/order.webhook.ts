@@ -59,6 +59,7 @@ export const ordersCreateWebhook = async (
         shopDomain: storeUrl,
         encryptedToken: store.shopify_access_token!,
         userId: storeId,
+        expiresAt: store.shopify_token_expires_at,
       });
       storeAccessToken = migrated?.accessToken ?? null;
     }

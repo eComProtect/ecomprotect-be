@@ -29,6 +29,7 @@ export const blockCustomer = async (
         shopDomain: storeUrl ?? "",
         encryptedToken: getStoreToken ?? "",
         userId: req.user?.id ?? "",
+        expiresAt: req.user?.shopify_token_expires_at,
       });
       if (!migrated) {
         res.status(status.UNAUTHORIZED).json({
@@ -120,6 +121,7 @@ export const unblockCustomer = async (
         shopDomain: storeUrl ?? "",
         encryptedToken: getStoreToken ?? "",
         userId: req.user?.id ?? "",
+        expiresAt: req.user?.shopify_token_expires_at,
       });
       if (!migrated) {
         res.status(status.UNAUTHORIZED).json({

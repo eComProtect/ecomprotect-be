@@ -59,6 +59,7 @@ export const billingStatusController = async (
         shopDomain: shopUrl,
         encryptedToken,
         userId: req.user!.id,
+        expiresAt: req.user?.shopify_token_expires_at,
       });
       if (!migrated) {
         res.status(status.UNAUTHORIZED).json({
@@ -131,6 +132,7 @@ export const subscribeController = async (
         shopDomain: shopUrl,
         encryptedToken,
         userId: req.user!.id,
+        expiresAt: req.user?.shopify_token_expires_at,
       });
       if (!migrated) {
         res.status(status.UNAUTHORIZED).json({

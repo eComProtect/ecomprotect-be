@@ -70,6 +70,7 @@ export const getCustomerRefundsAcrossStores = async (
         shopDomain: storeUrl,
         encryptedToken: getAccessToken!,
         userId: storeId!,
+        expiresAt: data?.shopify_token_expires_at,
       });
       if (!migrated) {
         res.status(status.UNAUTHORIZED).json({

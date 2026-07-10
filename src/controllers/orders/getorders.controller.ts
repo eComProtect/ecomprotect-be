@@ -29,6 +29,7 @@ export const getOrders = async (req: Request, res: Response) => {
         shopDomain: storeUrl ?? "",
         encryptedToken: getAccessToken ?? "",
         userId: data?.id ?? "",
+        expiresAt: data?.shopify_token_expires_at,
       });
       if (!migrated) {
         res.status(status.UNAUTHORIZED).json({
