@@ -11,9 +11,20 @@ interface LogActivityParams {
   meta?: Record<string, any>;
 }
 
-export async function logActivity(params: LogActivityParams) {
+type TransactionClient = Parameters<
+  Parameters<typeof database.transaction>[0]
+>[0];
+
+// Accepts either the top-level `database` (default) or a `tx` handle from
+// database.transaction(), so callers that need the activity row written
+// atomically alongside another write (e.g. an upsert its FK depends on) can
+// pass their transaction through instead of writing outside of it.
+export async function logActivity(
+  params: LogActivityParams,
+  dbClient: typeof database | TransactionClient = database
+) {
   try {
-    await database.insert(activities).values({
+    await dbClient.insert(activities).values({
       id: createId(),
       action: params.action,
       for: params.for,

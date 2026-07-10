@@ -256,20 +256,6 @@ export const getCustomerRefundsAcrossStores = async (
         flaggedStoresCount = flaggedStores.length;
       }
 
-      await logActivity({
-        action: "UPSERT_CUSTOMER",
-        for: "customer",
-        storeId,
-        customerId: node.id,
-        meta: {
-          totalOrders,
-          totalLossEvents,
-          returnsIncluded: includeReturns,
-          ip: lastKnownIp,
-          flagged: riskProfile.isFlagged,
-        },
-      });
-
       const customerDataToUpsert = {
         id: node.id,
         name: `${node.firstName ?? ""} ${node.lastName ?? ""}`.trim() || "N/A",
@@ -291,16 +277,40 @@ export const getCustomerRefundsAcrossStores = async (
         tags: Array.isArray(node.tags) ? node.tags.join(",") : (node.tags || ""),
       };
 
-      const promise = database
-        .insert(customers)
-        .values(customerDataToUpsert)
-        .onConflictDoUpdate({
-          target: customers.id,
-          set: {
-            ...customerDataToUpsert,
+      // Upsert the customer row and log its activity in the same transaction:
+      // the activity insert has a FK on customer_id, so it must run strictly
+      // after the customer row is committed, not before or in parallel with it.
+      const promise = database.transaction(async (tx) => {
+        const [upserted] = await tx
+          .insert(customers)
+          .values(customerDataToUpsert)
+          .onConflictDoUpdate({
+            target: customers.id,
+            set: {
+              ...customerDataToUpsert,
+            },
+          })
+          .returning();
+
+        await logActivity(
+          {
+            action: "UPSERT_CUSTOMER",
+            for: "customer",
+            storeId,
+            customerId: node.id,
+            meta: {
+              totalOrders,
+              totalLossEvents,
+              returnsIncluded: includeReturns,
+              ip: lastKnownIp,
+              flagged: riskProfile.isFlagged,
+            },
           },
-        })
-        .returning();
+          tx
+        );
+
+        return upserted;
+      });
 
       upsertPromises.push(promise);
     }
