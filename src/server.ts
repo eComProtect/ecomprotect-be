@@ -86,6 +86,12 @@ app.use(morgan("dev"));
 app.all("/api/auth/*splat", toNodeHandler(auth));
 
 app.use(throttle("default"));
+// Mounted before express.json(): webhook routes verify Shopify's HMAC over the
+// raw request body (via their own express.raw() middleware, see
+// webhook.route.ts). If the global JSON parser below ran first, it would
+// already have consumed the body stream, leaving raw() with nothing to sign
+// against and every webhook's HMAC check failing.
+app.use("/api/webhook", webhookRouter);
 app.use(express.json());
 app.use("/api/payment", paymentRouter);
 app.use("/api/user", userRouter);
@@ -93,7 +99,6 @@ app.use("/api/order", orderRouter);
 app.use("/api/customer", customerRouter);
 app.use("/api/settings", settingsRouter);
 app.use("/api/notifications", notificationRouter);
-app.use("/api/webhook", webhookRouter);
 app.use("/api/reports", reportsRouter);
 app.use("/api/activity", activityRouter);
 app.use("/api/billing", billingRouter);
