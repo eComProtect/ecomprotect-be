@@ -2,7 +2,7 @@ import { Request, Response } from "express";
 import status from "http-status";
 import { database } from "@/configs/connection.config";
 import { users } from "@/schema/schema";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, eq, isNull, ne, or } from "drizzle-orm";
 import {
   resolveRequestUser,
   resolveStoreRow,
@@ -52,7 +52,12 @@ export const getOnboardingStatusController = async (
   const shopDomain = shop.trim().replace(/^https?:\/\//, "");
   const owner = await findStoreOwnerByShopDomain(shopDomain);
 
-  if (!owner) {
+  // OAuth install always creates a placeholder owner row immediately (see
+  // /shopify/callback), so "no owner row" never actually happens once a shop
+  // has installed. The real needs_signup condition is that placeholder still
+  // being unfinished: onboardingStatus stays "installed" until the merchant
+  // completes the profile-details step, only then advancing to "signed_up".
+  if (!owner || owner.onboardingStatus === "installed") {
     res.status(status.OK).json({ status: "needs_signup" satisfies OnboardingStage });
     return;
   }
@@ -74,4 +79,63 @@ export const getOnboardingStatusController = async (
   }
 
   res.status(status.OK).json({ status: "ready" satisfies OnboardingStage });
+};
+
+/**
+ * POST /api/onboarding/signup
+ *
+ * Completes the profile-details step for the store's OAuth-created
+ * placeholder row (name/email/phone/company_name are all placeholder or
+ * empty until now — the row itself already exists with real Shopify
+ * credentials from install, see /shopify/callback). Sits behind protectRoute
+ * only, not requireActiveOnboarding: the whole point is to run before the
+ * store is "active".
+ */
+export const completeSignupController = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const store = req.user;
+
+  if (!store) {
+    res.status(status.UNAUTHORIZED).json({ message: "Authentication required." });
+    return;
+  }
+
+  const { firstName, lastName, phone, companyName, email } = req.body ?? {};
+
+  if (!firstName || !lastName || !phone || !companyName || !email) {
+    res.status(status.BAD_REQUEST).json({
+      message:
+        "firstName, lastName, phone, companyName, and email are all required.",
+    });
+    return;
+  }
+
+  const normalizedEmail = String(email).trim().toLowerCase();
+
+  const [emailTaken] = await database
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.email, normalizedEmail), ne(users.id, store.id)));
+
+  if (emailTaken) {
+    res.status(status.BAD_REQUEST).json({ message: "Email already in use." });
+    return;
+  }
+
+  const [updated] = await database
+    .update(users)
+    .set({
+      name: `${firstName} ${lastName}`.trim(),
+      email: normalizedEmail,
+      mobile_number: String(phone).trim(),
+      company_name: String(companyName).trim(),
+      onboardingStatus: "signed_up",
+      updatedAt: new Date(),
+    })
+    .where(eq(users.id, store.id))
+    .returning();
+
+  res.status(status.OK).json({ message: "Signup completed.", data: updated });
 };
