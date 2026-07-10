@@ -29,11 +29,23 @@ interface CustomerNode {
   };
 }
 
+const DEFAULT_SETTINGS: Pick<
+  RiskSettings,
+  "lostParcelThreshold" | "lostParcelPeriod" | "lossRateThreshold"
+> = {
+  lostParcelThreshold: 3,
+  lostParcelPeriod: 1,
+  lossRateThreshold: null,
+};
+
 export const calculateCustomerRisk = (
   customer: CustomerNode,
-  settings: RiskSettings
+  settings: RiskSettings | null | undefined
 ): { isFlagged: boolean; riskLevel: number; riskReason: string } => {
-  const { lostParcelThreshold, lostParcelPeriod, lossRateThreshold } = settings;
+  const { lostParcelThreshold, lostParcelPeriod, lossRateThreshold } = {
+    ...DEFAULT_SETTINGS,
+    ...(settings ?? {}),
+  };
 
   const now = new Date();
   const periodStartDate = new Date(

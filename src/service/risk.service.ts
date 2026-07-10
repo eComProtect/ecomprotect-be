@@ -155,14 +155,24 @@ export const calculateRiskyOrders = async ({
   accessToken?: string;
 }) => {
   // ---- Load settings ----
+  // No row for a store yet (never configured Additional Configuration) falls
+  // back to defaults instead of failing risk checks outright: no rate
+  // threshold configured (skips rate-based flagging, matching how a null
+  // lossRateThreshold on an existing row already behaves) and no exclusions.
+  const DEFAULT_SETTINGS = {
+    lossRateThreshold: null as number | null,
+    exclusionList: null as string | null,
+  };
+
   const [setting] = await database
     .select()
     .from(settings)
     .where(eq(settings.storeId, storeId));
 
-  if (!setting) throw new Error("Settings not found");
-
-  const { lossRateThreshold, exclusionList } = setting;
+  const { lossRateThreshold, exclusionList } = {
+    ...DEFAULT_SETTINGS,
+    ...(setting ?? {}),
+  };
 
   // ---- Load customer ----
   const [customerRecord] = await database

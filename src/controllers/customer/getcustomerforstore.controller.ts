@@ -86,12 +86,8 @@ export const getCustomerRefundsAcrossStores = async (
       .from(settings)
       .where(eq(settings.storeId, storeId as string));
 
-    if (!settingsResult) {
-      res
-        .status(status.BAD_REQUEST)
-        .json({ error: "Please configure you settings." });
-    }
-
+    // No settings row yet (store never configured Additional Configuration) —
+    // calculateCustomerRisk falls back to sensible defaults rather than crashing.
     const riskSettings = settingsResult[0];
     const exclusionList = riskSettings?.exclusionList ?? null;
 
