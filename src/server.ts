@@ -1,6 +1,5 @@
 import { assignSocketToReqIO } from "@/middlewares/socket.middleware";
 import { connAuthBridge } from "@/middlewares/socket.middleware";
-import { prepareMigration } from "./utils/preparemigration.util";
 import { throttle } from "./middlewares/throttle.middleware";
 import { registerEvents } from "@/utils/registerevents.util";
 import unknownRoutes from "@/routes/unknown.routes";
@@ -31,10 +30,18 @@ import shopifyRouter from "./routes/shopify.route";
 import billingRouter from "./routes/billing.route";
 
 config();
+
+process.on("uncaughtException", (err) => {
+  logger.error(`Uncaught exception: ${err.message}`);
+});
+
+process.on("unhandledRejection", (reason) => {
+  logger.error(`Unhandled rejection: ${reason}`);
+});
+
 const app = express();
 const httpServer = createServer(app);
 const port = Number(process.env.PORT) || 3001;
-const isProduction = process.env.NODE_ENV === "production";
 
 const corsOptions: CorsOptions = {
   origin: env.FRONTEND_DOMAIN,
@@ -46,7 +53,9 @@ const io = new Server(httpServer, {
 });
 
 swagger(app);
-prepareMigration(isProduction);
+
+// Schema sync is handled manually via `npm run dbpush` (drizzle-kit push),
+// not on app startup — see package.json.
 
 // Helmet, configured so Shopify Admin can embed this app in an iframe.
 // - frame-ancestors allows framing only by Shopify (any *.myshopify.com store + admin.shopify.com)

@@ -9,7 +9,7 @@ routes.use((req, res) => {
   if (isRequestSentFromAxios) {
     res.status(status.NOT_FOUND).json({ message: "Not Found" });
   } else {
-    res.send(
+    res.status(status.NOT_FOUND).send(
       `<div style="display: flex; height: 95vh">
       <img style="margin: auto; border-radius: 2rem; height: 90vh;" src="/monkey.jpg" />
       </div>`
