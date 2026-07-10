@@ -45,16 +45,35 @@ export const handleAppSubscriptionUpdate = async (
       return;
     }
 
-    if (newStatus && newStatus !== "ACTIVE") {
+    const shopFilter = or(
+      eq(users.shopify_url, `https://${shopDomain}`),
+      eq(users.shopify_url, shopDomain)
+    );
+
+    if (newStatus === "ACTIVE") {
       await database
         .update(users)
-        .set({ plan: null, package: null, updatedAt: new Date() })
-        .where(
-          or(
-            eq(users.shopify_url, `https://${shopDomain}`),
-            eq(users.shopify_url, shopDomain)
-          )
-        );
+        .set({
+          billingStatus: "active",
+          onboardingStatus: "active",
+          updatedAt: new Date(),
+        })
+        .where(shopFilter);
+    } else if (newStatus) {
+      // Any non-active status (CANCELLED, DECLINED, EXPIRED, FROZEN, ...)
+      // locks the merchant back out — onboardingStatus reverts to
+      // "signed_up" so GET /api/onboarding/status reports needs_billing
+      // again until they re-subscribe.
+      await database
+        .update(users)
+        .set({
+          plan: null,
+          package: null,
+          billingStatus: "inactive",
+          onboardingStatus: "signed_up",
+          updatedAt: new Date(),
+        })
+        .where(shopFilter);
     }
 
     await logActivity({

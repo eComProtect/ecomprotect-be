@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { protectRoute } from "@/middlewares/auth.middleware";
+import { protectRoute, requireActiveOnboarding } from "@/middlewares/auth.middleware";
 import {
   blockCustomer,
   unblockCustomer,
@@ -16,28 +16,52 @@ import { getFlaggedCustomersAndStores } from "@/controllers/customer/getflaggedc
 
 const customerRouter = Router();
 
-customerRouter.get("/customers", protectRoute, getCustomerRefundsAcrossStores);
+customerRouter.get(
+  "/customers",
+  protectRoute,
+  requireActiveOnboarding,
+  getCustomerRefundsAcrossStores
+);
+// Cross-store superadmin dashboard — no single store's onboarding state applies.
 customerRouter.get("/admin-customers", getCustomersForAdminDashboard);
-customerRouter.post("/block-customer", protectRoute, blockCustomer);
-customerRouter.post("/unblock-customer", protectRoute, unblockCustomer);
+customerRouter.post("/block-customer", protectRoute, requireActiveOnboarding, blockCustomer);
+customerRouter.post("/unblock-customer", protectRoute, requireActiveOnboarding, unblockCustomer);
 customerRouter.get(
   "/total-flagged-customer",
   protectRoute,
+  requireActiveOnboarding,
   TotalFlaggedCustomers
 );
 
-customerRouter.get("/repeated-offenders", protectRoute, getRepeatedOffenders);
-customerRouter.get("/top-risky-ips", protectRoute, getTopRiskyIPs);
-customerRouter.get("/top-flagged-reason", protectRoute, getTopFlaggedReasons);
+customerRouter.get(
+  "/repeated-offenders",
+  protectRoute,
+  requireActiveOnboarding,
+  getRepeatedOffenders
+);
+customerRouter.get("/top-risky-ips", protectRoute, requireActiveOnboarding, getTopRiskyIPs);
+customerRouter.get(
+  "/top-flagged-reason",
+  protectRoute,
+  requireActiveOnboarding,
+  getTopFlaggedReasons
+);
 customerRouter.get(
   "/monthly-risk-incidents",
   protectRoute,
+  requireActiveOnboarding,
   getMonthlyRiskIncidents
 );
-customerRouter.get("/risk-chart-data", protectRoute, getRiskChartData);
+customerRouter.get(
+  "/risk-chart-data",
+  protectRoute,
+  requireActiveOnboarding,
+  getRiskChartData
+);
 customerRouter.get(
   "/flagged-customer-store",
   protectRoute,
+  requireActiveOnboarding,
   getFlaggedCustomersAndStores
 );
 

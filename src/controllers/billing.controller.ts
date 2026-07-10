@@ -111,12 +111,15 @@ export const subscribeController = async (
     });
 
     // Record the merchant's intended plan/package and chosen order tier
-    // (subscription status itself is always confirmed live via Shopify).
+    // (subscription status itself is always confirmed live via Shopify, and
+    // onboardingStatus only flips to "active" once the subscriptions-update
+    // webhook confirms the charge — see subscription.webhook.ts).
     await database
       .update(users)
       .set({
         package: resolved.plan.name,
         plan: String(resolved.amount),
+        billingStatus: "pending",
         ...(ordersTier ? { average_orders_per_month: ordersTier } : {}),
         updatedAt: new Date(),
       })

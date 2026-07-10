@@ -53,6 +53,24 @@ const findUserByShopDomain = async (
 };
 
 /**
+ * A store's billing/onboarding state always lives on its owner row
+ * (storeOwnerId IS NULL). Staff rows point at their owner via storeOwnerId,
+ * so this resolves whichever row actually holds that shared state.
+ */
+export const resolveStoreRow = async (user: User): Promise<User | null> => {
+  if (!user.storeOwnerId) {
+    return user;
+  }
+
+  const [owner] = await database
+    .select()
+    .from(users)
+    .where(eq(users.id, user.storeOwnerId));
+
+  return owner || null;
+};
+
+/**
  * Resolves the store/user from a Shopify App Bridge session token (a short-lived JWT
  * sent by the embedded frontend). Embedded apps cannot rely on third-party cookies
  * inside the Admin iframe, so this is the primary auth path for merchants.
@@ -78,54 +96,61 @@ const findUserBySessionToken = async (token: string): Promise<User | null> => {
   }
 };
 
+/**
+ * Same identity resolution protectRoute uses (App Bridge session token, raw
+ * Shopify access token, API key, then a better-auth cookie session), but
+ * returns null on failure instead of writing a response — for callers that
+ * need to know "is there a valid session" without gating the request (e.g.
+ * the onboarding-status endpoint, which must report `needs_login` rather
+ * than 401 when there isn't one).
+ */
+export const resolveRequestUser = async (
+  req: Request
+): Promise<User | null> => {
+  const authorizationHeader = req.headers["authorization"];
+  const apiKeyHeader = req.headers["x-api-key"];
+
+  if (authorizationHeader && authorizationHeader.startsWith("Bearer ")) {
+    const bearer = authorizationHeader.substring(7);
+
+    const sessionUser = await findUserBySessionToken(bearer);
+    if (sessionUser) return sessionUser;
+
+    const user = await findUserByAccessToken(bearer);
+    if (user) return user;
+  }
+
+  if (typeof apiKeyHeader === "string" && apiKeyHeader.length > 0) {
+    const user = await findUserByApiKey(apiKeyHeader);
+    if (user) return user;
+  }
+
+  const headers = new Headers();
+  if (req.headers.cookie) {
+    headers.set("cookie", req.headers.cookie);
+  }
+  if (req.headers["user-agent"]) {
+    headers.set("user-agent", req.headers["user-agent"]);
+  }
+
+  const session = await auth.api.getSession({ headers });
+  if (session && session.user) {
+    return session.user as unknown as User;
+  }
+
+  return null;
+};
+
 export const protectRoute = async (
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
-    const authorizationHeader = req.headers["authorization"];
-    const apiKeyHeader = req.headers["x-api-key"];
+    const user = await resolveRequestUser(req);
 
-    if (authorizationHeader && authorizationHeader.startsWith("Bearer ")) {
-      const bearer = authorizationHeader.substring(7);
-
-      // 1) Embedded apps: an App Bridge session token (JWT) identifying the shop.
-      const sessionUser = await findUserBySessionToken(bearer);
-      if (sessionUser) {
-        req.user = sessionUser;
-        return next();
-      }
-
-      // 2) Legacy / server-to-server: a raw Shopify access token.
-      const user = await findUserByAccessToken(bearer);
-      if (user) {
-        req.user = user;
-        return next();
-      }
-    }
-
-    if (typeof apiKeyHeader === "string" && apiKeyHeader.length > 0) {
-      const user = await findUserByApiKey(apiKeyHeader);
-
-      if (user) {
-        req.user = user;
-        return next();
-      }
-    }
-
-    const headers = new Headers();
-    if (req.headers.cookie) {
-      headers.set("cookie", req.headers.cookie);
-    }
-    if (req.headers["user-agent"]) {
-      headers.set("user-agent", req.headers["user-agent"]);
-    }
-
-    const session = await auth.api.getSession({ headers });
-
-    if (session && session.user) {
-      req.user = session.user as unknown as User;
+    if (user) {
+      req.user = user;
       return next();
     }
 
@@ -159,6 +184,42 @@ export const adminOnly = async (
     });
     return;
   }
+  next();
+};
+
+/**
+ * Must run after protectRoute. Blocks dashboard access until the requesting
+ * user's store has finished onboarding (signed up + billing confirmed).
+ * Superadmins bypass this — they aren't scoped to any single store.
+ */
+export const requireActiveOnboarding = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  if (!req.user) {
+    res.status(status.UNAUTHORIZED).json({
+      error: "UNAUTHORIZED",
+      message: "Authentication required.",
+    });
+    return;
+  }
+
+  if (req.user.role === "superadmin") {
+    return next();
+  }
+
+  const store = await resolveStoreRow(req.user);
+
+  if (!store || store.onboardingStatus !== "active") {
+    res.status(status.FORBIDDEN).json({
+      error: "ONBOARDING_INCOMPLETE",
+      onboardingStatus: store?.onboardingStatus ?? null,
+      message: "This store hasn't finished onboarding yet.",
+    });
+    return;
+  }
+
   next();
 };
 

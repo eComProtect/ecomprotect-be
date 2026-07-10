@@ -8,6 +8,7 @@ import {
   numeric,
   ReferenceConfig,
   json,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 // import { createInsertSchema } from "drizzle-zod";
 import { createId } from "@paralleldrive/cuid2";
@@ -44,6 +45,14 @@ export const users = pgTable("users", {
     .$defaultFn(() => /* @__PURE__ */ new Date())
     .notNull(),
   role: text("role").default("subadmin"),
+  // Nullable: null means this row IS the store (an owner). Set for staff rows,
+  // pointing back at the owner row that holds the store's Shopify connection,
+  // onboarding, and billing state.
+  storeOwnerId: text("store_owner_id").references(
+    (): AnyPgColumn => users.id
+  ),
+  onboardingStatus: text("onboarding_status").default("installed"),
+  billingStatus: text("billing_status"),
   banned: boolean("banned").default(false),
   banReason: text("ban_reason"),
   banExpires: timestamp("ban_expires"),

@@ -28,6 +28,7 @@ import reportsRouter from "./routes/reports.route";
 import activityRouter from "./routes/activity.route";
 import shopifyRouter from "./routes/shopify.route";
 import billingRouter from "./routes/billing.route";
+import onboardingRouter from "./routes/onboarding.route";
 
 config();
 
@@ -96,6 +97,7 @@ app.use("/api/webhook", webhookRouter);
 app.use("/api/reports", reportsRouter);
 app.use("/api/activity", activityRouter);
 app.use("/api/billing", billingRouter);
+app.use("/api/onboarding", onboardingRouter);
 app.use("/shopify", shopifyRouter);
 
 app.use(unknownRoutes);
