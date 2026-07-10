@@ -64,8 +64,27 @@ shopifyRouter.get("/callback", async (req: Request, res: Response): Promise<void
     // Prevent SDK embedded redirect
     res.removeHeader('location');
 
-    const session = callbackResponse.session;
-    const shopDomain = session.shop; // e.g. "storename.myshopify.com"
+    const shopDomain = callbackResponse.session.shop; // e.g. "storename.myshopify.com"
+
+    // The classic authorization-code-grant flow (this handler) always returns
+    // a non-expiring offline token — that hasn't changed in v13. Shopify's
+    // Admin API now rejects non-expiring tokens outright, so every fresh
+    // token from here must be migrated via the dedicated token-exchange
+    // endpoint before it's stored or used for anything (webhook registration
+    // below would otherwise 403 immediately).
+    let session;
+    try {
+      ({ session } = await shopify.auth.migrateToExpiringToken({
+        shop: shopDomain,
+        nonExpiringOfflineAccessToken: callbackResponse.session.accessToken!,
+      }));
+    } catch (migrateErr: any) {
+      logger.error(
+        `[OAuth] Failed to migrate to an expiring token for ${shopDomain}: ${migrateErr.message}`
+      );
+      throw migrateErr;
+    }
+
     const accessToken = session.accessToken!;
     const tokenExpiresAt = session.expires ?? null;
     const encryptedToken = encrypt(accessToken);

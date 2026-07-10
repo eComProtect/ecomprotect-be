@@ -9,6 +9,10 @@ import { sendEmail } from "@/configs/brevo.config";
 import { createId } from "@paralleldrive/cuid2";
 import { decrypt } from "@/service/encryption.service";
 import { env } from "@/utils/env.util";
+import {
+  isShopifyTokenExpired,
+  attemptTokenMigration,
+} from "@/utils/shopify-token.util";
 
 export const ordersCreateWebhook = async (
   req: Request,
@@ -48,7 +52,16 @@ export const ordersCreateWebhook = async (
 
     const storeId = store.id;
     const storeUrl = store.shopify_url?.startsWith("http") ? store.shopify_url : `https://${store.shopify_url}`;
-    const storeAccessToken = store.shopify_access_token ? decrypt(store.shopify_access_token) : null;
+    let storeAccessToken = store.shopify_access_token ? decrypt(store.shopify_access_token) : null;
+
+    if (storeAccessToken && isShopifyTokenExpired(store.shopify_token_expires_at)) {
+      const migrated = await attemptTokenMigration({
+        shopDomain: storeUrl,
+        encryptedToken: store.shopify_access_token!,
+        userId: storeId,
+      });
+      storeAccessToken = migrated?.accessToken ?? null;
+    }
 
     // 2. Resolve Settings
     let storeSettings = await database.query.settings.findFirst({

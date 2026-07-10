@@ -12,6 +12,12 @@ import {
   plansForMerchant,
   resolvePlanAmount,
 } from "@/utils/billing.util";
+import {
+  isShopifyTokenExpired,
+  attemptTokenMigration,
+  shopifyReAuthUrl,
+  SHOPIFY_TOKEN_EXPIRED_RESPONSE,
+} from "@/utils/shopify-token.util";
 
 /**
  * GET /api/billing/plans — packages with prices resolved for an order tier.
@@ -46,7 +52,24 @@ export const billingStatusController = async (
       return;
     }
 
-    const accessToken = decrypt(encryptedToken);
+    let accessToken = decrypt(encryptedToken);
+
+    if (isShopifyTokenExpired(req.user?.shopify_token_expires_at)) {
+      const migrated = await attemptTokenMigration({
+        shopDomain: shopUrl,
+        encryptedToken,
+        userId: req.user!.id,
+      });
+      if (!migrated) {
+        res.status(status.UNAUTHORIZED).json({
+          ...SHOPIFY_TOKEN_EXPIRED_RESPONSE,
+          reAuthUrl: shopifyReAuthUrl(shopUrl),
+        });
+        return;
+      }
+      accessToken = migrated.accessToken;
+    }
+
     const subscriptions = await getActiveSubscriptions(shopUrl, accessToken);
     const active = subscriptions.some((s) => s.status === "ACTIVE");
 
@@ -101,7 +124,24 @@ export const subscribeController = async (
     // Return into the embedded app so the subscription gate re-checks and unlocks.
     const returnUrl = `${env.FRONTEND_DOMAIN}/?${params.toString()}`;
 
-    const accessToken = decrypt(encryptedToken);
+    let accessToken = decrypt(encryptedToken);
+
+    if (isShopifyTokenExpired(req.user?.shopify_token_expires_at)) {
+      const migrated = await attemptTokenMigration({
+        shopDomain: shopUrl,
+        encryptedToken,
+        userId: req.user!.id,
+      });
+      if (!migrated) {
+        res.status(status.UNAUTHORIZED).json({
+          ...SHOPIFY_TOKEN_EXPIRED_RESPONSE,
+          reAuthUrl: shopifyReAuthUrl(shopUrl),
+        });
+        return;
+      }
+      accessToken = migrated.accessToken;
+    }
+
     const { confirmationUrl, subscriptionId } = await createAppSubscription({
       shopUrl,
       accessToken,
