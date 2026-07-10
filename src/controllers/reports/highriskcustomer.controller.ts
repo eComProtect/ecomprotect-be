@@ -120,7 +120,7 @@ export const getHighRiskActivityReport = async (
         riskySience: customers.riskySince,
       })
       .from(customers)
-      .where(eq(customers.flagged, true));
+      .where(and(eq(customers.flagged, true), eq(customers.storeId, user)));
 
     // 2. Gather Metrics for each High-Risk Customer
     const finalReportData = await Promise.all(
