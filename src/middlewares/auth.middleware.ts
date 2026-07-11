@@ -3,7 +3,7 @@ import { auth } from "@/lib/auth";
 import { shopify } from "@/configs/shopify.config";
 import { users } from "@/schema/schema";
 import { database } from "@/configs/connection.config";
-import { eq, or } from "drizzle-orm";
+import { eq, or, and, isNull } from "drizzle-orm";
 import status from "http-status";
 
 type User = typeof users.$inferSelect;
@@ -39,13 +39,21 @@ const findUserByAccessToken = async (
 const findUserByShopDomain = async (
   shopDomain: string
 ): Promise<User | null> => {
+  // Staff rows copy the owner's shopify_url verbatim, so more than one row can
+  // share it — storeOwnerId IS NULL is what actually identifies the owner row
+  // (see resolveStoreRow / findStoreOwnerByShopDomain in onboarding.controller.ts).
+  // Without this filter, an App Bridge session token could resolve to whichever
+  // staff row Postgres happens to return first instead of the real owner.
   const userRecord = await database
     .select()
     .from(users)
     .where(
-      or(
-        eq(users.shopify_url, `https://${shopDomain}`),
-        eq(users.shopify_url, shopDomain)
+      and(
+        or(
+          eq(users.shopify_url, `https://${shopDomain}`),
+          eq(users.shopify_url, shopDomain)
+        ),
+        isNull(users.storeOwnerId)
       )
     );
 
