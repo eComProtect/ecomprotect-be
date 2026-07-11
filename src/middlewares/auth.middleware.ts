@@ -187,6 +187,24 @@ export const adminOnly = async (
   next();
 };
 
+/** Roles allowed to view/edit a store's staff roster. */
+const STAFF_MANAGER_ROLES = ["owner", "subadmin", "manager"];
+
+export const requireStaffManager = async (
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  if (!req.user || !STAFF_MANAGER_ROLES.includes(req.user.role ?? "")) {
+    res.status(status.FORBIDDEN).json({
+      error: "FORBIDDEN",
+      message: "You do not have permission to manage staff.",
+    });
+    return;
+  }
+  next();
+};
+
 /**
  * Must run after protectRoute. Blocks dashboard access until the requesting
  * user's store has finished onboarding (signed up + billing confirmed).

@@ -498,6 +498,12 @@ export const auth = betterAuth({
         fieldName: "role",
         returned: true,
       },
+      storeOwnerId: {
+        type: "string",
+        required: false,
+        fieldName: "storeOwnerId",
+        returned: true,
+      },
     },
     changeEmail: {
       enabled: true,
