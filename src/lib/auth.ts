@@ -15,7 +15,7 @@ import { and, eq, ne, sql } from "drizzle-orm";
 import {
   registerRequiredWebhooks,
 } from "@/utils/webhook.util";
-import { ac, manager, support, admin, superadmin } from "./permission";
+import { ac, manager, support, admin, superadmin, owner } from "./permission";
 import { decrypt, encrypt } from "@/service/encryption.service";
 import { users } from "@/schema/schema";
 import { sendEmail } from "@/configs/brevo.config";
@@ -73,6 +73,7 @@ export const auth = betterAuth({
         superadmin,
         manager,
         support,
+        owner,
       },
     }),
     emailOTP({

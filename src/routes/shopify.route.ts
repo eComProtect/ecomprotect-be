@@ -127,6 +127,10 @@ shopifyRouter.get("/callback", async (req: Request, res: Response): Promise<void
         name: shopDomain,
         email: `${shopDomain.replace(".myshopify.com", "")}@shopify.placeholder`,
         emailVerified: false,
+        // Without this, the row falls back to the schema's "subadmin" default,
+        // which isn't even a registered role in the admin plugin's access
+        // control — leaving the actual store owner unable to manage staff.
+        role: "owner",
         shopify_url: `https://${shopDomain}`,
         shopify_access_token: encryptedToken,
         shopify_token_expires_at: tokenExpiresAt,

@@ -23,3 +23,9 @@ export const manager = ac.newRole({}) as any;
 // export const subadmin = ac.newRole({}) as any;
 
 export const support = ac.newRole({}) as any;
+
+// Store owners — scoped to just creating their own staff (via /api/auth/admin/create-user).
+// Deliberately NOT granted list/ban/impersonate/delete/set-role: those better-auth admin
+// endpoints operate across all users platform-wide with no store scoping, unlike our own
+// /api/staff routes which scope by storeOwnerId.
+export const owner = ac.newRole({ user: ["create"] }) as any;
