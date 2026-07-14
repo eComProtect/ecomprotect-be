@@ -3,6 +3,7 @@ import { protectRoute, requireActiveOnboarding } from "@/middlewares/auth.middle
 import { getNotificationController } from "@/controllers/notification/getnotificaiton.controller";
 import { markNotificationSeen } from "@/controllers/notification/marknotification.controller";
 import {
+  getPushSubscriptionStatusController,
   getVapidPublicKeyController,
   savePushSubscriptionController,
 } from "@/controllers/notification/pushsubscription.controller";
@@ -25,11 +26,16 @@ notificationRouter.put(
 
 notificationRouter.get("/vapid-public-key", getVapidPublicKeyController);
 
-notificationRouter.post(
-  "/push-subscription",
+// Deliberately no protectRoute here — the standalone /enable-notifications
+// tab (opened outside Shopify's iframe to get a real permission prompt) has
+// no session of its own. It identifies the store via a `shop` field instead;
+// see resolveStoreForPushSubscription in the controller.
+notificationRouter.post("/push-subscription", savePushSubscriptionController);
+
+notificationRouter.get(
+  "/push-subscription/status",
   protectRoute,
-  requireActiveOnboarding,
-  savePushSubscriptionController
+  getPushSubscriptionStatusController
 );
 
 export default notificationRouter;

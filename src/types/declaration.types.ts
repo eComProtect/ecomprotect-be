@@ -12,6 +12,9 @@ declare module "express" {
 
 declare module "socket.io" {
   interface Socket {
-    session?: Session;
+    // The store this socket is authenticated as (see connAuthBridge) — the
+    // owner's users.id, same key rooms are joined under, regardless of
+    // whether the connecting user is the owner or a staff account.
+    storeId?: string;
   }
 }

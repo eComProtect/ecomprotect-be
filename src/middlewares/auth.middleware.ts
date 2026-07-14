@@ -36,7 +36,7 @@ const findUserByAccessToken = async (
   return userRecord[0] || null;
 };
 
-const findUserByShopDomain = async (
+export const findUserByShopDomain = async (
   shopDomain: string
 ): Promise<User | null> => {
   // Staff rows copy the owner's shopify_url verbatim, so more than one row can

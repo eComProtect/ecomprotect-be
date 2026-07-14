@@ -13,6 +13,7 @@ import {
   isShopifyTokenExpired,
   attemptTokenMigration,
 } from "@/utils/shopify-token.util";
+import { emitNewNotification } from "@/service/notificationsocket.service";
 
 export const ordersCreateWebhook = async (
   req: Request,
@@ -327,18 +328,27 @@ export const ordersCreateWebhook = async (
         }).catch((e) => console.error("Super admin email error:", e.message));
       }
 
-      await database.insert(notifications).values({
-        storeId,
-        customerId: customerRecord.id,
-        type: "HIGH_RISK_ORDER",
-        title: `High Risk Order: ${order.name}`,
-        message: `High risk detected for ${order.name}`,
-        meta: {
-          orderId: String(order.id),
-          orderName: order.name,
-          reasons: highRiskOrder.reasons,
-        },
-      } as any).catch((e) => console.error("Notification Error:", e.message));
+      try {
+        const [insertedNotification] = await database
+          .insert(notifications)
+          .values({
+            storeId,
+            customerId: customerRecord.id,
+            type: "HIGH_RISK_ORDER",
+            title: `High Risk Order: ${order.name}`,
+            message: `High risk detected for ${order.name}`,
+            meta: {
+              orderId: String(order.id),
+              orderName: order.name,
+              reasons: highRiskOrder.reasons,
+            },
+          } as any)
+          .returning();
+
+        emitNewNotification(req.io, storeId, insertedNotification);
+      } catch (e: any) {
+        console.error("Notification Error:", e.message);
+      }
     }
 
     res.status(200).send("✅ Success");

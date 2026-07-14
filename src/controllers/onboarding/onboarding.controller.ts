@@ -2,8 +2,9 @@ import { Request, Response } from "express";
 import status from "http-status";
 import { database } from "@/configs/connection.config";
 import { account, users } from "@/schema/schema";
-import { and, eq, isNull, ne, or } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import {
+  findUserByShopDomain,
   resolveRequestUser,
   resolveStoreRow,
 } from "@/middlewares/auth.middleware";
@@ -21,23 +22,6 @@ export type OnboardingStage =
   | "needs_billing"
   | "needs_login"
   | "ready";
-
-const findStoreOwnerByShopDomain = async (shopDomain: string) => {
-  const [owner] = await database
-    .select()
-    .from(users)
-    .where(
-      and(
-        or(
-          eq(users.shopify_url, `https://${shopDomain}`),
-          eq(users.shopify_url, shopDomain)
-        ),
-        isNull(users.storeOwnerId)
-      )
-    );
-
-  return owner ?? null;
-};
 
 /**
  * GET /api/onboarding/status?shop=<shop-domain>
@@ -58,7 +42,7 @@ export const getOnboardingStatusController = async (
   }
 
   const shopDomain = shop.trim().replace(/^https?:\/\//, "");
-  const owner = await findStoreOwnerByShopDomain(shopDomain);
+  const owner = await findUserByShopDomain(shopDomain);
 
   // OAuth install always creates a placeholder owner row immediately (see
   // /shopify/callback), so "no owner row" never actually happens once a shop

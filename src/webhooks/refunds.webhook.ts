@@ -4,6 +4,7 @@ import { customers, notifications, orders } from "@/schema/schema";
 import { eq } from "drizzle-orm";
 import { logActivity } from "@/service/logactivity.service";
 import { sendPushToStore } from "@/service/push.service";
+import { emitNewNotification } from "@/service/notificationsocket.service";
 import status from "http-status";
 
 export const refundsCreateWebhook = async (req: Request, res: Response) => {
@@ -65,7 +66,7 @@ export const refundsCreateWebhook = async (req: Request, res: Response) => {
     const [inserted] = await database
       .insert(notifications)
       .values(notificationData)
-      .returning({ id: notifications.id });
+      .returning();
 
     if (inserted?.id && customerRecord?.storeId) {
       sendPushToStore(customerRecord.storeId, {
@@ -73,6 +74,8 @@ export const refundsCreateWebhook = async (req: Request, res: Response) => {
         message: notificationData.message,
         notificationId: inserted.id,
       }).catch(() => { });
+
+      emitNewNotification(req.io, customerRecord.storeId, inserted);
     }
 
     res.status(status.OK).send("Refund webhook processed");
