@@ -30,6 +30,7 @@ export const createSettings = async (
 
       emailNotificationsEnabled,
       notificationEmail,
+      emailAlertMinOrderValue,
       includeOrderDetails,
       includeReasonForFlag,
       includeRecommendedAction,
@@ -40,6 +41,14 @@ export const createSettings = async (
     } = req.body;
 
     console.log(req.body);
+
+    // numeric columns bind as strings in postgres — coerce defensively,
+    // same as every other numeric field written elsewhere in this codebase
+    // (e.g. orders.totalAmount).
+    const emailAlertMinOrderValueStr =
+      emailAlertMinOrderValue === undefined || emailAlertMinOrderValue === null
+        ? undefined
+        : String(emailAlertMinOrderValue);
 
     const existing = await database
       .select()
@@ -65,6 +74,7 @@ export const createSettings = async (
 
           emailNotificationsEnabled,
           notificationEmail,
+          emailAlertMinOrderValue: emailAlertMinOrderValueStr,
           includeOrderDetails,
           includeReasonForFlag,
           includeRecommendedAction,
@@ -93,6 +103,7 @@ export const createSettings = async (
 
         emailNotificationsEnabled,
         notificationEmail,
+        emailAlertMinOrderValue: emailAlertMinOrderValueStr,
         includeOrderDetails,
         includeReasonForFlag,
         includeRecommendedAction,

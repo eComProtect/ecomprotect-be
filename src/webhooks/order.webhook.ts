@@ -287,7 +287,15 @@ export const ordersCreateWebhook = async (
         waiverLink: `${env.FRONTEND_DOMAIN}/waiver/${order.id}`,
       });
 
-      if (storeSettings?.emailNotificationsEnabled) {
+      // Merchant's own alert email respects their configured minimum order
+      // value (default 0 — every high-risk order, same as before this
+      // setting existed) so stores that get flooded with small flagged
+      // orders can dial email volume down without losing in-app visibility
+      // (toast/TitleBar/notifications list still fire regardless).
+      const emailAlertThreshold = Number(storeSettings?.emailAlertMinOrderValue ?? 0);
+      const orderValue = Number(highRiskOrder.totalAmount ?? 0);
+
+      if (storeSettings?.emailNotificationsEnabled && orderValue >= emailAlertThreshold) {
         await sendEmail({
           to: storeSettings.notificationEmail || store.email,
           subject: `High Risk Alert: ${order.name}`,

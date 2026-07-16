@@ -204,6 +204,14 @@ export const settings = pgTable("settings", {
 
   emailNotificationsEnabled: boolean("email_notifications_enabled").default(true),
   notificationEmail: varchar("notification_email", { length: 255 }).default('info@example.com'),
+  // Only send a high-risk-order email when the order's value is at or above
+  // this amount — 0 (the default) preserves the original behavior of
+  // emailing on every high-risk order, so existing merchants see no change
+  // until they raise it.
+  emailAlertMinOrderValue: numeric("email_alert_min_order_value", {
+    precision: 12,
+    scale: 2,
+  }).default("0"),
   includeOrderDetails: boolean("include_order_details").default(true),
   includeReasonForFlag: boolean("include_reason_for_flag").default(true),
   includeRecommendedAction: boolean("include_recommended_action").default(true),
