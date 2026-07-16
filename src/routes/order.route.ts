@@ -5,6 +5,11 @@ import { getRiskyOrders } from "@/controllers/orders/riskyorders.controller";
 import { addFlag } from "@/controllers/orders/addflag.controller";
 import { deleteFlag } from "@/controllers/orders/deleteflag.controller";
 import { getCustomerRefundHistoryFromShopify } from "@/controllers/orders/getrefunds.controller";
+import {
+  listPendingActions,
+  cancelPendingAction,
+} from "@/controllers/orders/pendingaction.controller";
+import { getWaiverInfo, contestOrder } from "@/controllers/orders/waiver.controller";
 
 const orderRouter = Router();
 
@@ -18,5 +23,19 @@ orderRouter.get(
   requireActiveOnboarding,
   getCustomerRefundHistoryFromShopify
 );
+
+orderRouter.get("/pending-actions", protectRoute, requireActiveOnboarding, listPendingActions);
+orderRouter.post(
+  "/cancel-pending-action",
+  protectRoute,
+  requireActiveOnboarding,
+  cancelPendingAction
+);
+
+// Deliberately no protectRoute — the customer has no account/session here.
+// The signed token in the query/body (bound to this exact orderId) is what
+// authorizes access; see waiver.controller.ts.
+orderRouter.get("/:orderId/waiver-info", getWaiverInfo);
+orderRouter.post("/:orderId/contest", contestOrder);
 
 export default orderRouter;

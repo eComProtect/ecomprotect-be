@@ -13,3 +13,17 @@ export const emitNewNotification = (
 ): void => {
   io?.to(storeId).emit("new_notification", notification);
 };
+
+/**
+ * Emitted whenever a pendingRiskActions row's status changes (executed by
+ * the scheduler, cancelled by staff, or cancelled by a customer contest) so
+ * the Pending Actions dashboard page can update live instead of requiring a
+ * manual refresh.
+ */
+export const emitPendingActionUpdate = (
+  io: IO | undefined,
+  storeId: string,
+  update: { id: string; status: string }
+): void => {
+  io?.to(storeId).emit("pending_action_updated", update);
+};

@@ -30,6 +30,7 @@ import shopifyRouter from "./routes/shopify.route";
 import billingRouter from "./routes/billing.route";
 import onboardingRouter from "./routes/onboarding.route";
 import staffRouter from "./routes/staff.route";
+import { startPendingRiskActionsScheduler } from "@/jobs/pendingriskactions.job";
 
 config();
 
@@ -113,3 +114,5 @@ httpServer.listen(port as number, () => {
   logger.info(`server is running on port: ${port}`);
   logger.info(`Docs are available at \n/api/docs and /api/docs-json`);
 });
+
+startPendingRiskActionsScheduler(io);

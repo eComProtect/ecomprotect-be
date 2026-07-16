@@ -227,6 +227,32 @@ export const settings = pgTable("settings", {
 //   settings: many(settings),
 // }));
 
+// A hold/cancel that's been decided (autoHoldRiskyOrders / auto_cancel) but
+// deferred by settings.actionDelayHours — gives a human (staff, or the
+// customer via the waiver/contest page) a real window to intervene before
+// it actually reaches Shopify. Doubles as the audit trail for "was there a
+// real opportunity for a human to stop this."
+export const pendingRiskActions = pgTable("pending_risk_actions", {
+  id: uuid("id").primaryKey(),
+  storeId: foreignkeyRef("store_id", () => users.id, {
+    onDelete: "cascade",
+  }).notNull(),
+  orderId: varchar("order_id", { length: 128 })
+    .references(() => orders.id, { onDelete: "cascade" })
+    .notNull(),
+  customerId: varchar("customer_id", { length: 128 }).references(
+    () => customers.id,
+    { onDelete: "set null" }
+  ),
+  actionType: varchar("action_type", { length: 20 }).notNull(), // "hold" | "auto_cancel"
+  status: varchar("status", { length: 30 }).default("pending").notNull(),
+  // "pending" | "executed" | "cancelled_by_staff" | "cancelled_by_contest" | "failed"
+  reasons: json("reasons").$type<string[]>(),
+  scheduledFor: timestamp("scheduled_for").notNull(),
+  executedAt: timestamp("executed_at"),
+  ...timeStamps,
+});
+
 export const notifications = pgTable("notifications", {
   id: uuid("id").primaryKey(),
   storeId: uuid("store_id")

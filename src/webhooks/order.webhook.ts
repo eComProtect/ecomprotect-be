@@ -1,10 +1,12 @@
 import { Request, Response } from "express";
-import axios from "axios";
+import { eq } from "drizzle-orm";
 import { database } from "@/configs/connection.config";
-import { customers, settings, notifications } from "@/schema/schema";
-// import { and, eq } from "drizzle-orm";
+import { customers, settings, notifications, orders, pendingRiskActions } from "@/schema/schema";
 import { calculateRiskyOrders } from "@/service/risk.service";
-import { highRiskOrderNotificationTemplate } from "@/utils/sendgrid.util";
+import {
+  highRiskOrderNotificationTemplate,
+  customerOrderReviewEmailTemplate,
+} from "@/utils/sendgrid.util";
 import { sendEmail } from "@/configs/brevo.config";
 import { createId } from "@paralleldrive/cuid2";
 import { decrypt } from "@/service/encryption.service";
@@ -14,6 +16,8 @@ import {
   attemptTokenMigration,
 } from "@/utils/shopify-token.util";
 import { emitNewNotification } from "@/service/notificationsocket.service";
+import { holdOrderFulfillment, cancelShopifyOrder } from "@/service/orderaction.service";
+import { generateJwt } from "@/utils/jwt.util";
 
 export const ordersCreateWebhook = async (
   req: Request,
@@ -74,7 +78,11 @@ export const ordersCreateWebhook = async (
       console.log(`⚙️ Initializing default settings for ${shopDomain}`);
       const [newSettingsRecord] = await database.insert(settings).values({
         storeId,
-        autoHoldRiskyOrders: true,
+        // Opt-in, not opt-out — matches the privacy policy's "merchant
+        // chooses whether to enable automation" claim. Existing stores'
+        // rows are untouched by this default (defaults only apply on
+        // insert of a new row with no explicit value).
+        autoHoldRiskyOrders: false,
         primaryAction: "hold",
         notificationEmail: store.email,
         updatedAt: new Date(),
@@ -133,129 +141,73 @@ export const ordersCreateWebhook = async (
     });
 
     // 5. Automation Actions
+    //
+    // Gating, per the privacy policy's opt-in/delay/manual-override claims:
+    // - Hold only auto-fires when the merchant has explicitly turned on
+    //   autoHoldRiskyOrders — primaryAction === "hold" alone used to fire
+    //   this unconditionally, which is what made the policy inaccurate.
+    // - auto_cancel is already an explicit opt-in (the merchant picked it
+    //   from the Primary Action dropdown), so no extra toggle is needed
+    //   there.
+    // - If primaryAction is "hold" but autoHoldRiskyOrders is false, nothing
+    //   automatic happens here at all — the order is already flagged=true
+    //   (calculateRiskyOrders, above) and already gets the notification
+    //   below, which is the "flagged/pending record staff can see" the
+    //   policy describes, with zero automated Shopify-side action taken.
+    let automationAction: "hold" | "auto_cancel" | null = null;
     if (highRiskOrder) {
-      // Normalise order ID to GID format once
       const gOrderId = String(order.id).startsWith("gid://")
         ? String(order.id)
         : `gid://shopify/Order/${order.id}`;
 
-      if (storeSettings?.primaryAction === "hold") {
-        try {
-          console.log(`⏸️ Holding fulfillment for Order ${order.id}`);
+      const shouldHold =
+        storeSettings?.primaryAction === "hold" &&
+        storeSettings?.autoHoldRiskyOrders === true;
+      const shouldAutoCancel = storeSettings?.primaryAction === "auto_cancel";
 
-          // GraphQL: fetch open fulfillment orders for this order
-          const foGqlQuery = `
-            query getFulfillmentOrders($orderId: ID!) {
-              order(id: $orderId) {
-                fulfillmentOrders(first: 10) {
-                  nodes {
-                    id
-                    status
-                  }
-                }
-              }
-            }
-          `;
-          const foRes = await axios.post(
-            `${storeUrl}/admin/api/2025-07/graphql.json`,
-            { query: foGqlQuery, variables: { orderId: gOrderId } },
-            { headers: { "X-Shopify-Access-Token": storeAccessToken, "Content-Type": "application/json" } }
+      if (shouldHold || shouldAutoCancel) {
+        automationAction = shouldHold ? "hold" : "auto_cancel";
+        const delayHours = Number(storeSettings?.actionDelayHours ?? 0);
+
+        if (delayHours > 0) {
+          // Defer instead of firing immediately — gives staff (via the new
+          // cancel-pending-action endpoint) and the customer (via the
+          // waiver/contest page) a real window to intervene before this
+          // reaches Shopify.
+          const scheduledFor = new Date(Date.now() + delayHours * 60 * 60 * 1000);
+          await database.insert(pendingRiskActions).values({
+            id: createId(),
+            storeId,
+            orderId: gOrderId,
+            customerId: customerRecord.id,
+            actionType: automationAction,
+            status: "pending",
+            reasons: highRiskOrder.reasons,
+            scheduledFor,
+          });
+          console.log(
+            `⏳ Deferred ${automationAction} for Order ${order.id} until ${scheduledFor.toISOString()}`
           );
-
-          const foNodes: Array<{ id: string; status: string }> =
-            foRes.data?.data?.order?.fulfillmentOrders?.nodes ?? [];
-          const openFOs = foNodes.filter((fo) => fo.status === "OPEN");
-
-          // GraphQL: place a hold on each open fulfillment order
-          const holdMutation = `
-            mutation fulfillmentOrderHold($id: ID!, $fulfillmentHold: FulfillmentOrderHoldInput!) {
-              fulfillmentOrderHold(id: $id, fulfillmentHold: $fulfillmentHold) {
-                userErrors { message }
-              }
-            }
-          `;
-          for (const fo of openFOs) {
-            const holdRes = await axios.post(
-              `${storeUrl}/admin/api/2025-07/graphql.json`,
-              {
-                query: holdMutation,
-                variables: {
-                  id: fo.id,
-                  fulfillmentHold: {
-                    reason: "OTHER",
-                    reasonNotes: `Fulfillment held by eComProtect. Identified risk factors: ${highRiskOrder.reasons.join("; ")}. Please perform a manual review before fulfilling.`,
-                    notifyMerchant: false,
-                  },
-                },
-              },
-              { headers: { "X-Shopify-Access-Token": storeAccessToken, "Content-Type": "application/json" } }
-            );
-            const holdErrors = holdRes.data?.data?.fulfillmentOrderHold?.userErrors ?? [];
-            if (holdErrors.length > 0) {
-              console.error(`Hold errors for FO ${fo.id}:`, holdErrors);
-            } else {
-              console.log(`✅ Hold applied to FO ${fo.id}`);
-            }
+        } else if (automationAction === "hold") {
+          try {
+            console.log(`⏸️ Holding fulfillment for Order ${order.id}`);
+            await holdOrderFulfillment({
+              storeUrl,
+              accessToken: storeAccessToken,
+              gOrderId,
+              reasons: highRiskOrder.reasons,
+            });
+          } catch (e: any) {
+            console.error("Fulfillment Hold Error:", e.response?.data || e.message);
           }
-
-          // GraphQL: update order note for visibility in the Shopify dashboard
-          const orderUpdateMutation = `
-            mutation orderUpdate($input: OrderInput!) {
-              orderUpdate(input: $input) {
-                order { id }
-                userErrors { message }
-              }
-            }
-          `;
-          await axios.post(
-            `${storeUrl}/admin/api/2025-07/graphql.json`,
-            {
-              query: orderUpdateMutation,
-              variables: {
-                input: {
-                  id: gOrderId,
-                  note: `eComProtect: Fulfillment on hold. Risk factors: ${highRiskOrder.reasons.join("; ")}`,
-                },
-              },
-            },
-            { headers: { "X-Shopify-Access-Token": storeAccessToken, "Content-Type": "application/json" } }
-          );
-          console.log(`✅ Main Order Note updated for Order ${order.id}`);
-        } catch (e: any) {
-          console.error("Fulfillment Hold Error:", e.response?.data || e.message);
-        }
-      } else if (storeSettings?.primaryAction === "auto_cancel") {
-        try {
-          console.log(`⛔️ Cancelling Order ${order.id}`);
-
-          // GraphQL: cancel the order
-          const cancelMutation = `
-            mutation orderCancel($orderId: ID!, $reason: OrderCancelReason!, $notifyCustomer: Boolean!) {
-              orderCancel(orderId: $orderId, reason: $reason, notifyCustomer: $notifyCustomer) {
-                orderCancelUserErrors { message }
-              }
-            }
-          `;
-          const cancelRes = await axios.post(
-            `${storeUrl}/admin/api/2025-07/graphql.json`,
-            {
-              query: cancelMutation,
-              variables: {
-                orderId: gOrderId,
-                reason: "FRAUD",
-                notifyCustomer: true,
-              },
-            },
-            { headers: { "X-Shopify-Access-Token": storeAccessToken, "Content-Type": "application/json" } }
-          );
-          const cancelErrors = cancelRes.data?.data?.orderCancel?.orderCancelUserErrors ?? [];
-          if (cancelErrors.length > 0) {
-            console.error("Cancel errors:", cancelErrors);
-          } else {
-            console.log("✅ Order cancelled.");
+        } else {
+          try {
+            console.log(`⛔️ Cancelling Order ${order.id}`);
+            await cancelShopifyOrder({ storeUrl, accessToken: storeAccessToken, gOrderId });
+            await database.update(orders).set({ autoCancel: true }).where(eq(orders.id, gOrderId));
+          } catch (e: any) {
+            console.error("Cancellation Error:", e.response?.data || e.message);
           }
-        } catch (e: any) {
-          console.error("Cancellation Error:", e.response?.data || e.message);
         }
       }
     }
@@ -267,9 +219,16 @@ export const ordersCreateWebhook = async (
         .join("\n");
 
       const recommendedAction =
-        storeSettings?.primaryAction === "hold"
-          ? "Fulfillment Hold (Manual Review Required)"
-          : "Automatic Cancellation";
+        automationAction === "hold"
+          ? "Fulfillment Hold (Automatic)"
+          : automationAction === "auto_cancel"
+          ? "Automatic Cancellation"
+          : "Flagged for Manual Review (no automated action taken)";
+
+      // Signed so only this specific order's customer can view/contest it —
+      // not guessable/enumerable by changing the order id in the URL.
+      const waiverToken = generateJwt({ orderId: String(order.id), storeId }, "30d");
+      const waiverLink = `${env.FRONTEND_DOMAIN}/waiver/${order.id}?token=${waiverToken}`;
 
       const storeEmailHtml = highRiskOrderNotificationTemplate({
         adminName: store.name || "Admin",
@@ -284,7 +243,7 @@ export const ordersCreateWebhook = async (
         includeWavierLink: storeSettings?.includeWavierLink ?? false,
         orderDetails: orderDetails,
         recommendedAction,
-        waiverLink: `${env.FRONTEND_DOMAIN}/waiver/${order.id}`,
+        waiverLink,
       });
 
       // Merchant's own alert email respects their configured minimum order
@@ -301,6 +260,24 @@ export const ordersCreateWebhook = async (
           subject: `High Risk Alert: ${order.name}`,
           htmlContent: storeEmailHtml,
         }).catch((e) => console.error("Store email error:", e.message));
+      }
+
+      // Customer-facing copy — the waiver link was previously only ever
+      // sent to the merchant (via storeEmailHtml above), which meant the
+      // customer had no way to even find out a screening happened, let
+      // alone contest it.
+      if (storeSettings?.includeWavierLink && customerEmail) {
+        const customerEmailHtml = customerOrderReviewEmailTemplate({
+          orderName: order.name,
+          storeName: store.name || shopDomain,
+          waiverLink,
+        });
+
+        await sendEmail({
+          to: customerEmail,
+          subject: `A quick review is needed for your order ${order.name}`,
+          htmlContent: customerEmailHtml,
+        }).catch((e) => console.error("Customer waiver email error:", e.message));
       }
 
       const superAdminEmail = env.ADMIN_EMAIL;

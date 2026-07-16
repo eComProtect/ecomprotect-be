@@ -623,3 +623,61 @@ export const highRiskOrderNotificationTemplate = ({
 </html>
   `;
 };
+
+/**
+ * Customer-facing copy for the same high-risk-order event — deliberately
+ * separate from highRiskOrderNotificationTemplate (which is written for the
+ * merchant: internal risk-reason jargon, a link into Shopify Admin, an
+ * internal "recommended action"). This one is plain-language and gives the
+ * customer a link to their own waiver/contest page.
+ */
+export const customerOrderReviewEmailTemplate = ({
+  orderName,
+  storeName,
+  waiverLink,
+}: {
+  orderName: string;
+  storeName: string;
+  waiverLink: string;
+}) => {
+  const buttonColor = "#255BE9";
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { margin: 0; padding: 0; background-color: #f4f4f4; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
+        .container { width: 100%; max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); overflow: hidden; }
+        .header { background-color: #333333; color: #ffffff; padding: 20px; text-align: center; }
+        .header h1 { margin: 0; font-size: 22px; }
+        .content { padding: 30px; color: #333333; line-height: 1.6; }
+        .button-container { text-align: center; margin-top: 30px; margin-bottom: 20px; }
+        .button { background-color: ${buttonColor}; color: #ffffff; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; }
+        .footer { text-align: center; padding: 20px; font-size: 12px; color: #888888; background-color: #f4f4f4; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>A quick review is needed for your order</h1>
+        </div>
+        <div class="content">
+            <p>Hello,</p>
+            <p>Your order <strong>${orderName}</strong> from <strong>${storeName}</strong> has been flagged by our automated fraud-screening system for a closer look before it's fulfilled.</p>
+            <p>If you believe this was flagged in error, or you'd like to provide more information to help us review it faster, please use the link below.</p>
+            <div class="button-container">
+                <a href="${waiverLink}" class="button">Review My Order</a>
+            </div>
+            <p style="font-size: 13px; color: #777;">This link is unique to your order and doesn't require an account.</p>
+        </div>
+        <div class="footer">
+            <p>© ${new Date().getFullYear()} ${storeName}. This screening is performed on behalf of the merchant.</p>
+        </div>
+    </div>
+</body>
+</html>
+  `;
+};
