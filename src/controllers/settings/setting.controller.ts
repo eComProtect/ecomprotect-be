@@ -40,7 +40,16 @@ export const createSettings = async (
       actionDelayHours,
     } = req.body;
 
-    console.log(req.body);
+    // Explicit, targeted log for actionDelayHours specifically — this field's
+    // save/read path was the subject of a mismatch investigation (settings
+    // saved correctly under storeId X, but a webhook consuming a different
+    // storeId's row saw a stale value with no error surfaced anywhere).
+    // This line makes the exact payload value visible at save time so a
+    // future mismatch is caught here instead of only being discoverable
+    // downstream in a webhook log.
+    console.log(
+      `[SettingsSave] storeId=${storeId} actionDelayHours (raw)=${actionDelayHours} (type=${typeof actionDelayHours})`
+    );
 
     // numeric columns bind as strings in postgres — coerce defensively,
     // same as every other numeric field written elsewhere in this codebase

@@ -35,10 +35,25 @@ const processOrderCreate = async (
 ): Promise<void> => {
   try {
     // 1. Resolve Store & Auth
+    //
+    // Staff/support accounts are provisioned with the SAME shopify_url (and a
+    // copy of the Shopify token) as their owner, so per-request controllers
+    // that read req.user.shopify_url directly don't need an extra join. That
+    // means a shopify_url match alone is ambiguous — it can return either the
+    // owner row OR a staff row for the same store. This webhook must resolve
+    // to the OWNER row specifically (storeOwnerId IS NULL): it's the row every
+    // other piece of this pipeline (settings, customers, pendingRiskActions)
+    // is scoped against via storeId. Matching a staff row here silently reads
+    // and writes against the wrong storeId — e.g. actionDelayHours coming
+    // from the staff's own (possibly stale/never-configured) settings row
+    // instead of the owner's, with no error, just quietly wrong behavior.
     const store = await database.query.users.findFirst({
-      where: (u, { or, eq }) => or(
-        eq(u.shopify_url, `https://${shopDomain}`),
-        eq(u.shopify_url, shopDomain)
+      where: (u, { and, or, eq, isNull }) => and(
+        or(
+          eq(u.shopify_url, `https://${shopDomain}`),
+          eq(u.shopify_url, shopDomain)
+        ),
+        isNull(u.storeOwnerId)
       ),
     });
 
@@ -47,9 +62,11 @@ const processOrderCreate = async (
       // has already gone out, there's no way to signal Shopify from here.
       // Retrying wouldn't fix this anyway (it means our DB is out of sync,
       // not a transient failure), so a log is the correct outcome.
-      console.error(`❌ Store ${shopDomain} not found in DB.`);
+      console.error(`❌ Store ${shopDomain} not found in DB (no owner row with matching shopify_url).`);
       return;
     }
+
+    console.log(`[Automation] Resolved store for ${shopDomain}: id=${store.id} email=${store.email} role=${store.role}`);
 
     const storeId = store.id;
     const storeUrl = store.shopify_url?.startsWith("http") ? store.shopify_url : `https://${store.shopify_url}`;
