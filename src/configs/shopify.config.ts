@@ -22,8 +22,24 @@ export const shopify = shopifyApi({
     "write_customers",
     "read_orders",
     "write_orders",
+    // NOTE: read_fulfillments/write_fulfillments are the *Fulfillment* API
+    // (shipments/tracking) — they do NOT grant access to fulfillment
+    // ORDERS. The order.fulfillmentOrders connection and the
+    // fulfillmentOrderHold mutation require the *_fulfillment_orders scopes
+    // below. Without them, Shopify silently returns an empty
+    // fulfillmentOrders list (no error), which is why auto-hold was a
+    // no-op. merchant_managed = self-fulfilled, assigned = via a
+    // fulfillment service, third_party = 3rd-party fulfillment apps; a
+    // hold must work regardless of how the merchant fulfills, so we
+    // request read+write for all three.
     "read_fulfillments",
     "write_fulfillments",
+    "read_merchant_managed_fulfillment_orders",
+    "write_merchant_managed_fulfillment_orders",
+    "read_assigned_fulfillment_orders",
+    "write_assigned_fulfillment_orders",
+    "read_third_party_fulfillment_orders",
+    "write_third_party_fulfillment_orders",
     "read_returns",
   ],
   hostName: env.SHOPIFY_APP_URL.replace(/^https?:\/\//, ""),
