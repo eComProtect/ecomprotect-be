@@ -17,6 +17,7 @@ export const shopify = shopifyApi({
     "write_orders",
     "read_fulfillments",
     "write_fulfillments",
+    "read_returns",
   ],
   hostName: env.SHOPIFY_APP_URL.replace(/^https?:\/\//, ""),
   apiVersion: ApiVersion.July26,
