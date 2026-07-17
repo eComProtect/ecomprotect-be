@@ -90,31 +90,50 @@ export const ordersCreateWebhook = async (
       storeSettings = newSettingsRecord as any;
     }
 
-    // 3. Resolve Customer (Auto-Create if New)
-    let customerRecord = await database.query.customers.findFirst({
-      where: (c, { and, eq }) => and(
-        eq(c.email, customerEmail),
-        eq(c.storeId, storeId)
-      ),
-    });
+    // 3. Resolve Customer (Upsert)
+    //
+    // Previously a select-by-(email, storeId) then plain INSERT if not
+    // found — if that lookup missed for any reason (case-sensitive email
+    // mismatch against however the customer-sync path stored it, a stale
+    // storeId, etc.) while a row already existed under this same Shopify
+    // gid, the INSERT collided on the primary key and crashed the whole
+    // webhook with an unhandled unique-violation, blocking every
+    // downstream risk/automation step. Upserting directly on customers.id
+    // (matching the pattern in getcustomerforstore.controller.ts) makes
+    // this resilient regardless of why a prior lookup might miss, without
+    // needing a separate existence check at all.
+    const shopifyId = order.customer?.id
+      ? (String(order.customer.id).startsWith("gid://") ? order.customer.id : `gid://shopify/Customer/${order.customer.id}`)
+      : `gid://shopify/Customer/${createId()}`;
 
-    if (!customerRecord) {
-      console.log(`👤 Creating record for new customer ${customerEmail}`);
-      const shopifyId = order.customer?.id
-        ? (String(order.customer.id).startsWith("gid://") ? order.customer.id : `gid://shopify/Customer/${order.customer.id}`)
-        : `gid://shopify/Customer/${createId()}`;
+    const customerName = `${order.customer?.first_name || ""} ${order.customer?.last_name || ""}`.trim() || customerEmail.split("@")[0];
 
-      const [newCust] = await database.insert(customers).values({
+    const [customerRecord] = await database
+      .insert(customers)
+      .values({
         id: shopifyId,
         storeId,
         email: customerEmail,
-        name: `${order.customer?.first_name || ""} ${order.customer?.last_name || ""}`.trim() || customerEmail.split("@")[0],
+        name: customerName,
         totalOrders: order.customer?.orders_count || 1,
         totalRefunded: "0.00",
         updatedAt: new Date(),
-      }).returning();
-      customerRecord = newCust;
-    }
+      })
+      .onConflictDoUpdate({
+        target: customers.id,
+        set: {
+          // Deliberately excludes totalRefunded — that's tracked via the
+          // refunds webhook and risk calculation, this upsert's job is
+          // just to keep identity fields current, not reset accounting
+          // data an existing customer already has.
+          storeId,
+          email: customerEmail,
+          name: customerName,
+          totalOrders: order.customer?.orders_count || 1,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
 
     const customerId = customerRecord.id.startsWith("gid://") ? customerRecord.id : `gid://shopify/Customer/${customerRecord.id}`;
 
