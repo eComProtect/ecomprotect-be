@@ -50,12 +50,15 @@ export const sendEmail = async (
         );
         return true;
     } catch (error: unknown) {
-        const errorMessage =
-            error instanceof Error ? error.message : "Unknown error";
-        logger.error(`Failed to send email to ${options.to}:`, errorMessage);
-        if (error instanceof Error && (error as any).response) {
-            logger.error("Brevo API Error:", (error as any).response.body);
-        }
+        // Pino only interpolates trailing string args into %s/%d
+        // placeholders — a bare string with no placeholder is silently
+        // dropped, which is why this used to log nothing after the colon.
+        // Passing the error as a merging object keeps the full message,
+        // stack, and any Brevo response body in the output.
+        logger.error(
+            { err: error, brevoResponse: (error as any)?.response?.body },
+            `Failed to send email to ${options.to}`
+        );
         return false;
     }
 };
