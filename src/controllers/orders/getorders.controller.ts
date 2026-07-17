@@ -5,6 +5,7 @@ import status from "http-status";
 import { eq } from "drizzle-orm";
 import { fulfillmentOrders, orderItems, orders } from "@/schema/schema";
 import { decrypt } from "@/service/encryption.service";
+import { ADMIN_API_VERSION } from "@/configs/shopify.config";
 import {
   isShopifyTokenExpired,
   attemptTokenMigration,
@@ -125,7 +126,7 @@ export const getOrders = async (req: Request, res: Response) => {
     `;
 
     const response = await axios.post(
-      `${storeUrl}/admin/api/2025-07/graphql.json`,
+      `${storeUrl}/admin/api/${ADMIN_API_VERSION}/graphql.json`,
       { query },
       {
         headers: {

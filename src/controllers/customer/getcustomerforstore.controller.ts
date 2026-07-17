@@ -8,6 +8,7 @@ import { logger } from "@/utils/logger.util";
 import { calculateCustomerRisk } from "@/service/riskycustomer.service";
 import { logActivity } from "@/service/logactivity.service";
 import { decrypt } from "@/service/encryption.service";
+import { ADMIN_API_VERSION } from "@/configs/shopify.config";
 import {
   buildReturnsSelection,
   countLossEvents,
@@ -139,7 +140,7 @@ export const getCustomerRefundsAcrossStores = async (
 
     let includeReturns = true;
     let response = await axios.post(
-      `${storeUrl}/admin/api/2025-07/graphql.json`,
+      `${storeUrl}/admin/api/${ADMIN_API_VERSION}/graphql.json`,
       { query: buildCustomerSyncQuery(includeReturns) },
       {
         headers: shopifyHeaders,
@@ -152,7 +153,7 @@ export const getCustomerRefundsAcrossStores = async (
         `Shopify return data unavailable for ${storeUrl}; syncing customers with refunds only.`
       );
       response = await axios.post(
-        `${storeUrl}/admin/api/2025-07/graphql.json`,
+        `${storeUrl}/admin/api/${ADMIN_API_VERSION}/graphql.json`,
         { query: buildCustomerSyncQuery(false) },
         {
           headers: shopifyHeaders,
@@ -200,7 +201,7 @@ export const getCustomerRefundsAcrossStores = async (
             }
           `;
           const orderIpResp = await axios.post(
-            `${storeUrl}/admin/api/2025-07/graphql.json`,
+            `${storeUrl}/admin/api/${ADMIN_API_VERSION}/graphql.json`,
             { query: ipQuery, variables: { id: gidOrderId } },
             {
               headers: {

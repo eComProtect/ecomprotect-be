@@ -2,6 +2,7 @@ import { database } from "@/configs/connection.config";
 import { customers, orders, settings, users } from "@/schema/schema";
 import { eq, sql, and } from "drizzle-orm";
 import axios from "axios";
+import { ADMIN_API_VERSION } from "@/configs/shopify.config";
 import {
   buildReturnsSelection,
   countLossEvents,
@@ -125,7 +126,7 @@ const postShopifyQuery = async ({
 }) => {
   try {
     return await axios.post(
-      `${storeUrl}/admin/api/2025-07/graphql.json`,
+      `${storeUrl}/admin/api/${ADMIN_API_VERSION}/graphql.json`,
       { query, variables },
       {
         headers: {

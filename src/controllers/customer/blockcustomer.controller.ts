@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm";
 import axios from "axios";
 import { logActivity } from "@/service/logactivity.service";
 import { decrypt } from "@/service/encryption.service";
+import { ADMIN_API_VERSION } from "@/configs/shopify.config";
 import {
   isShopifyTokenExpired,
   attemptTokenMigration,
@@ -71,7 +72,7 @@ export const blockCustomer = async (
     }`;
 
     const response = await axios.post(
-      `${storeUrl}/admin/api/2025-07/graphql.json`,
+      `${storeUrl}/admin/api/${ADMIN_API_VERSION}/graphql.json`,
       {
         query: mutation,
         variables: { id: customerId as string, tags: ["BLOCKED"] },
@@ -161,7 +162,7 @@ export const unblockCustomer = async (
     `;
 
     const fetchResponse = await axios.post(
-      `${storeUrl}/admin/api/2025-07/graphql.json`,
+      `${storeUrl}/admin/api/${ADMIN_API_VERSION}/graphql.json`,
       {
         query: fetchQuery,
         variables: { id: customerId },
@@ -193,7 +194,7 @@ export const unblockCustomer = async (
       }`;
 
     const response = await axios.post(
-      `${storeUrl}/admin/api/2025-07/graphql.json`,
+      `${storeUrl}/admin/api/${ADMIN_API_VERSION}/graphql.json`,
       {
         query: mutation,
         variables: { id: customerId, tags: updatedTags },
