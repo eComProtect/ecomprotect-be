@@ -58,16 +58,34 @@ export const holdOrderFulfillment = async (
       }
     }
   `;
-  const foRes = await axios.post(endpoint, { query: foGqlQuery, variables: { orderId: gOrderId } }, { headers });
+  const queryFulfillmentOrders = () =>
+    axios.post(endpoint, { query: foGqlQuery, variables: { orderId: gOrderId } }, { headers });
+
+  let foRes = await queryFulfillmentOrders();
   assertNoTopLevelErrors(foRes, "getFulfillmentOrders");
 
-  const foNodes: Array<{ id: string; status: string }> =
+  let foNodes: Array<{ id: string; status: string }> =
     foRes.data?.data?.order?.fulfillmentOrders?.nodes ?? [];
-  const openFOs = foNodes.filter((fo) => fo.status === "OPEN");
+  let openFOs = foNodes.filter((fo) => fo.status === "OPEN");
 
   if (openFOs.length === 0) {
+    // Shopify creates fulfillment orders as part of order creation, but
+    // there's no documented guarantee they exist at the exact instant the
+    // orders/create webhook fires — retry once after a short delay to rule
+    // out that race before treating this as "genuinely nothing to hold".
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+    foRes = await queryFulfillmentOrders();
+    assertNoTopLevelErrors(foRes, "getFulfillmentOrders (retry)");
+    foNodes = foRes.data?.data?.order?.fulfillmentOrders?.nodes ?? [];
+    openFOs = foNodes.filter((fo) => fo.status === "OPEN");
+  }
+
+  if (openFOs.length === 0) {
+    // Log the raw statuses Shopify actually returned so this is diagnosable
+    // from the logs alone next time, instead of a generic "nothing found".
     console.warn(
-      `⚠️ No open fulfillment orders found for ${gOrderId} — nothing to hold (order may already be fulfilled/closed, or the fulfillmentOrders query returned none).`
+      `⚠️ No open fulfillment orders for ${gOrderId} after retry — nothing to hold. ` +
+        `Shopify returned: ${JSON.stringify(foNodes)}`
     );
   }
 
