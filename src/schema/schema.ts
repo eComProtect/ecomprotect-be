@@ -357,6 +357,18 @@ export const verification = pgTable("verification", {
   ),
 });
 
+// Idempotency guard for inbound Shopify webhooks. Key is
+// `${shopDomain}:${topic}:${shopifyResourceId}` — permanent (no TTL): a
+// create-type webhook logically fires once per resource, so a duplicate
+// delivery arriving minutes or hours later (Shopify retries on timeout/
+// non-200, with backoff over an extended window) should still be skipped
+// rather than reprocessed once a time window expires.
+export const webhookEvents = pgTable("webhook_events", {
+  key: varchar("key", { length: 255 }).primaryKey(),
+  topic: varchar("topic", { length: 100 }).notNull(),
+  receivedAt: timestamp("received_at").defaultNow().notNull(),
+});
+
 export const throttleinsight = pgTable("throttle_insight", {
   waitTime: integer("wait_time").notNull(),
   msBeforeNext: integer("ms_before_next").notNull(),

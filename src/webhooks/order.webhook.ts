@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import { eq } from "drizzle-orm";
 import { database } from "@/configs/connection.config";
-import { customers, settings, notifications, orders, pendingRiskActions } from "@/schema/schema";
+import { customers, settings, notifications, orders, pendingRiskActions, webhookEvents } from "@/schema/schema";
 import { calculateRiskyOrders } from "@/service/risk.service";
 import {
   highRiskOrderNotificationTemplate,
@@ -18,29 +18,22 @@ import {
 import { emitNewNotification } from "@/service/notificationsocket.service";
 import { holdOrderFulfillment, cancelShopifyOrder } from "@/service/orderaction.service";
 import { generateJwt } from "@/utils/jwt.util";
+import type { IO } from "@/types/socket.types";
 
-export const ordersCreateWebhook = async (
-  req: Request,
-  res: Response
+/**
+ * The actual webhook handler acknowledges Shopify immediately (see
+ * ordersCreateWebhook below) — everything that follows runs afterward, in a
+ * detached async call. Nothing here can report failure via HTTP status
+ * anymore since the response has already been sent; every branch that used
+ * to `res.status(...).send(...)` and return now just logs and returns.
+ */
+const processOrderCreate = async (
+  order: any,
+  customerEmail: string,
+  shopDomain: string,
+  io: IO | undefined
 ): Promise<void> => {
   try {
-    const order = req.body;
-    const customerEmail = order.customer?.email;
-    const shopDomain = req.headers["x-shopify-shop-domain"] as string;
-
-    console.log(`📩 Webhook from ${shopDomain} | Order: ${order.name}`);
-
-    if (!shopDomain) {
-      res.status(400).send("Missing shop domain header");
-      return;
-    }
-
-    if (!customerEmail) {
-      console.log("Skipping webhook: No customer email found in order payload.");
-      res.status(200).send("✅ Skipped (No Email)");
-      return;
-    }
-
     // 1. Resolve Store & Auth
     const store = await database.query.users.findFirst({
       where: (u, { or, eq }) => or(
@@ -50,8 +43,11 @@ export const ordersCreateWebhook = async (
     });
 
     if (!store) {
+      // Previously a 404 that told Shopify to retry — now that the response
+      // has already gone out, there's no way to signal Shopify from here.
+      // Retrying wouldn't fix this anyway (it means our DB is out of sync,
+      // not a transient failure), so a log is the correct outcome.
       console.error(`❌ Store ${shopDomain} not found in DB.`);
-      res.status(404).send("Store not found");
       return;
     }
 
@@ -139,8 +135,7 @@ export const ordersCreateWebhook = async (
 
     // 4. Run Risk Analysis
     if (!storeAccessToken) {
-      console.error(`❌ Missing access token for ${shopDomain}`);
-      res.status(500).send("Missing store access token");
+      console.error(`❌ Missing access token for ${shopDomain} — cannot run risk analysis for order ${order.name}.`);
       return;
     }
 
@@ -349,15 +344,74 @@ export const ordersCreateWebhook = async (
           } as any)
           .returning();
 
-        emitNewNotification(req.io, storeId, insertedNotification);
+        emitNewNotification(io, storeId, insertedNotification);
       } catch (e: any) {
         console.error("Notification Error:", e.message);
       }
     }
 
-    res.status(200).send("✅ Success");
+    console.log(`✅ Finished processing order ${order.name}`);
   } catch (err: any) {
-    console.error("Webhook Fatal:", err.message);
-    res.status(500).send("❌ Error");
+    // Shopify already has its 200 — this can only be logged, not reported.
+    console.error(`Webhook Fatal (async) for order ${order?.name}:`, err.message);
   }
+};
+
+export const ordersCreateWebhook = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  const order = req.body;
+  const customerEmail = order.customer?.email;
+  const shopDomain = req.headers["x-shopify-shop-domain"] as string;
+
+  console.log(`📩 Webhook from ${shopDomain} | Order: ${order.name}`);
+
+  if (!shopDomain) {
+    res.status(400).send("Missing shop domain header");
+    return;
+  }
+
+  if (!customerEmail) {
+    console.log("Skipping webhook: No customer email found in order payload.");
+    res.status(200).send("✅ Skipped (No Email)");
+    return;
+  }
+
+  // Idempotency guard — Shopify redelivers a webhook whenever it doesn't
+  // get a fast 200 (or on transient failures), and this key is permanent
+  // (no time window) since orders/create logically fires once per order;
+  // a late duplicate should still be skipped, not reprocessed once some
+  // window expires.
+  const dedupeKey = `${shopDomain}:orders/create:${order.id}`;
+  try {
+    const inserted = await database
+      .insert(webhookEvents)
+      .values({ key: dedupeKey, topic: "orders/create" })
+      .onConflictDoNothing()
+      .returning({ key: webhookEvents.key });
+
+    if (inserted.length === 0) {
+      console.log(`↩️ Duplicate webhook delivery for ${dedupeKey} — already processed, skipping.`);
+      res.status(200).send("✅ Duplicate (already processed)");
+      return;
+    }
+  } catch (err: any) {
+    // If the dedup check itself fails, fail safe by still acknowledging
+    // Shopify (so it doesn't keep retrying) but skip processing rather than
+    // risk silently processing an actual duplicate.
+    console.error("Webhook dedup check failed:", err.message);
+    res.status(200).send("✅ Received (dedup check failed, not processed)");
+    return;
+  }
+
+  // Acknowledge immediately — Shopify only needs confirmation the webhook
+  // was received within ~5s, not that processing finished. Everything
+  // heavy (store/token resolution, risk analysis, hold/cancel, emails)
+  // used to run before this response went out, regularly taking 7-9s and
+  // triggering Shopify's own retry-on-timeout, which reprocessed the same
+  // order multiple times.
+  res.status(200).send("✅ Received");
+
+  void processOrderCreate(order, customerEmail, shopDomain, req.io);
 };
