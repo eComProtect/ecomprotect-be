@@ -20,6 +20,13 @@ const options: IRateLimiterStoreNoAutoExpiryOptions = {
   keyPrefix: "",
   duration: 60, // per seconds
   points: 50, // requests
+  // The "throttle" table is now part of the drizzle schema (schema.ts) and
+  // created deterministically via `npm run dbpush`, instead of relying on
+  // this library's own fire-and-forget CREATE TABLE IF NOT EXISTS at process
+  // boot — that runtime auto-create raced on multi-instance startup and left
+  // no recovery if the table was ever dropped/reset externally, producing
+  // "relation throttle does not exist" in production.
+  tableCreated: true,
 };
 
 type Throttle = <O = IOverRideOptions | "default">(

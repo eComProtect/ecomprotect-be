@@ -6,6 +6,7 @@ import {
   boolean,
   timestamp,
   numeric,
+  bigint,
   ReferenceConfig,
   json,
   type AnyPgColumn,
@@ -369,6 +370,21 @@ export const webhookEvents = pgTable("webhook_events", {
   key: varchar("key", { length: 255 }).primaryKey(),
   topic: varchar("topic", { length: 100 }).notNull(),
   receivedAt: timestamp("received_at").defaultNow().notNull(),
+});
+
+// Storage table for rate-limiter-flexible's RateLimiterPostgres (see
+// throttle.middleware.ts). Column shape matches that library's own
+// _getCreateTableStmt() exactly. Previously this table was left for the
+// library to auto-create at process boot via a fire-and-forget CREATE TABLE
+// IF NOT EXISTS query — unreliable in production (races on multi-instance
+// startup, and the in-memory tableCreated flag never notices if the table is
+// later dropped/reset externally). Bringing it under drizzle-kit push makes
+// its existence as deterministic as every other table; tableCreated: true is
+// now passed to RateLimiterPostgres to skip its own auto-create entirely.
+export const throttle = pgTable("throttle", {
+  key: varchar("key", { length: 255 }).primaryKey(),
+  points: integer("points").notNull().default(0),
+  expire: bigint("expire", { mode: "number" }),
 });
 
 export const throttleinsight = pgTable("throttle_insight", {
