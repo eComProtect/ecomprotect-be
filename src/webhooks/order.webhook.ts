@@ -384,6 +384,7 @@ export const ordersCreateWebhook = async (
   // a late duplicate should still be skipped, not reprocessed once some
   // window expires.
   const dedupeKey = `${shopDomain}:orders/create:${order.id}`;
+  let isDuplicate = false;
   try {
     const inserted = await database
       .insert(webhookEvents)
@@ -391,17 +392,22 @@ export const ordersCreateWebhook = async (
       .onConflictDoNothing()
       .returning({ key: webhookEvents.key });
 
-    if (inserted.length === 0) {
-      console.log(`↩️ Duplicate webhook delivery for ${dedupeKey} — already processed, skipping.`);
-      res.status(200).send("✅ Duplicate (already processed)");
-      return;
-    }
+    isDuplicate = inserted.length === 0;
   } catch (err: any) {
-    // If the dedup check itself fails, fail safe by still acknowledging
-    // Shopify (so it doesn't keep retrying) but skip processing rather than
-    // risk silently processing an actual duplicate.
-    console.error("Webhook dedup check failed:", err.message);
-    res.status(200).send("✅ Received (dedup check failed, not processed)");
+    // Fail OPEN, not closed: if the dedup table/query itself is broken
+    // (e.g. webhook_events doesn't exist yet — see dbpush), the correct
+    // behavior is to lose dedup protection temporarily, not to silently
+    // stop processing every single order. A missing safety net is far
+    // less damaging than a total automation outage.
+    console.error(
+      `CRITICAL: Webhook dedup check failed for ${dedupeKey} — proceeding WITHOUT duplicate protection: ${err.message}`
+    );
+    isDuplicate = false;
+  }
+
+  if (isDuplicate) {
+    console.log(`↩️ Duplicate webhook delivery for ${dedupeKey} — already processed, skipping.`);
+    res.status(200).send("✅ Duplicate (already processed)");
     return;
   }
 
