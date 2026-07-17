@@ -237,9 +237,11 @@ export const pendingRiskActions = pgTable("pending_risk_actions", {
   storeId: foreignkeyRef("store_id", () => users.id, {
     onDelete: "cascade",
   }).notNull(),
-  orderId: varchar("order_id", { length: 128 })
-    .references(() => orders.id, { onDelete: "cascade" })
-    .notNull(),
+  // No FK to orders.id — the orders table row is populated by a separate sync
+  // process and does not exist at the time the orders/create webhook fires.
+  // A FK here would cause every deferred-action INSERT to throw a constraint
+  // violation, silently swallowing the row creation in the outer try/catch.
+  orderId: varchar("order_id", { length: 128 }).notNull(),
   customerId: varchar("customer_id", { length: 128 }).references(
     () => customers.id,
     { onDelete: "set null" }

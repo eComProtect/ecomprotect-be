@@ -181,7 +181,15 @@ const processOrderCreate = async (
 
       if (shouldHold || shouldAutoCancel) {
         automationAction = shouldHold ? "hold" : "auto_cancel";
-        const delayHours = Number(storeSettings?.actionDelayHours ?? 0);
+        const rawDelay = storeSettings?.actionDelayHours;
+        const delayHours = Number(rawDelay ?? 0);
+
+        // Diagnostic: always log the raw value so a missing/null column or a
+        // silent settings-save failure is immediately visible in production logs.
+        console.log(
+          `[Automation] Order ${order.id} | action=${automationAction} | ` +
+          `actionDelayHours (raw)=${rawDelay} (computed)=${delayHours}`
+        );
 
         if (delayHours > 0) {
           // Defer instead of firing immediately — gives staff (via the new
@@ -189,19 +197,48 @@ const processOrderCreate = async (
           // waiver/contest page) a real window to intervene before this
           // reaches Shopify.
           const scheduledFor = new Date(Date.now() + delayHours * 60 * 60 * 1000);
-          await database.insert(pendingRiskActions).values({
-            id: createId(),
-            storeId,
-            orderId: gOrderId,
-            customerId: customerRecord.id,
-            actionType: automationAction,
-            status: "pending",
-            reasons: highRiskOrder.reasons,
-            scheduledFor,
-          });
-          console.log(
-            `⏳ Deferred ${automationAction} for Order ${order.id} until ${scheduledFor.toISOString()}`
-          );
+          try {
+            await database.insert(pendingRiskActions).values({
+              id: createId(),
+              storeId,
+              orderId: gOrderId,
+              customerId: customerRecord.id,
+              actionType: automationAction,
+              status: "pending",
+              reasons: highRiskOrder.reasons,
+              scheduledFor,
+            });
+            console.log(
+              `⏳ Deferred ${automationAction} for Order ${order.id} until ${scheduledFor.toISOString()}`
+            );
+          } catch (deferErr: any) {
+            // If this throws (e.g. schema column missing in prod — run dbpush,
+            // or a constraint violation) log it loudly so it's diagnosable,
+            // then fall through to immediate execution so the order isn't left
+            // completely unprotected while the infrastructure issue is resolved.
+            console.error(
+              `CRITICAL: pendingRiskActions INSERT failed for Order ${order.id} ` +
+              `(delayHours=${delayHours}) — falling back to IMMEDIATE ${automationAction}. ` +
+              `Root cause (run dbpush if column missing): ${deferErr.message}`
+            );
+            // fall through to the immediate-execution branches below
+            if (automationAction === "hold") {
+              try {
+                console.log(`⏸️ Holding fulfillment for Order ${order.id} (deferred-insert fallback)`);
+                await holdOrderFulfillment({ storeUrl, accessToken: storeAccessToken, gOrderId, reasons: highRiskOrder.reasons });
+              } catch (e: any) {
+                console.error("Fulfillment Hold Error (fallback):", e.response?.data || e.message);
+              }
+            } else {
+              try {
+                console.log(`⛔️ Cancelling Order ${order.id} (deferred-insert fallback)`);
+                await cancelShopifyOrder({ storeUrl, accessToken: storeAccessToken, gOrderId });
+                await database.update(orders).set({ autoCancel: true }).where(eq(orders.id, gOrderId));
+              } catch (e: any) {
+                console.error("Cancellation Error (fallback):", e.response?.data || e.message);
+              }
+            }
+          }
         } else if (automationAction === "hold") {
           try {
             console.log(`⏸️ Holding fulfillment for Order ${order.id}`);
