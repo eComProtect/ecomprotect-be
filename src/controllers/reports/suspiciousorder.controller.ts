@@ -45,9 +45,15 @@ export const getSuspiciousOrdersSummary = async (
 
     const autoCancelled = allOrders.filter((o) => o.autoCancel).length;
 
-    const preventedValue = allOrders
-      .filter((o) => o.flagged || o.autoCancel)
-      .reduce((sum, o) => sum + Number(o.totalAmount ?? 0), 0);
+    // totalAmount comes back as a numeric/decimal string from Postgres — summing
+    // floats accumulates rounding drift (e.g. 8277.160000000002), so round once
+    // to the nearest penny after the sum rather than per-item.
+    const preventedValue =
+      Math.round(
+        allOrders
+          .filter((o) => o.flagged || o.autoCancel)
+          .reduce((sum, o) => sum + Number(o.totalAmount ?? 0), 0) * 100
+      ) / 100;
 
     // Chart data (group by day)
     const flaggedByDay: Record<string, number> = {};

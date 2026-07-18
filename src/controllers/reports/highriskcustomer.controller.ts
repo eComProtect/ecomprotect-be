@@ -2,103 +2,103 @@ import { database } from "@/configs/connection.config";
 import { customers, orders, fulfillmentOrders } from "@/schema/schema";
 import { logActivity } from "@/service/logactivity.service";
 import { logger } from "@/utils/logger.util";
-// import { format } from "date-fns";
+import { format } from "date-fns";
 import { eq, desc, count, or, and } from "drizzle-orm";
 import { Request, Response } from "express";
 import status from "http-status";
-// import puppeteer from "puppeteer";
+import puppeteer from "puppeteer";
 
-// function maskEmail(email: string | null | undefined): string {
-//   if (!email) return "N/A";
-//   const parts = email.split("@");
-//   if (parts.length !== 2) return email;
-//   const name = parts[0];
-//   const domain = parts[1];
+function maskEmail(email: string | null | undefined): string {
+  if (!email) return "N/A";
+  const parts = email.split("@");
+  if (parts.length !== 2) return email;
+  const name = parts[0];
+  const domain = parts[1];
 
-//   const maskedName =
-//     name.length > 2 ? name.substring(0, 2) + "****" : name + "****";
-//   return `${maskedName}@${domain}`;
-// }
+  const maskedName =
+    name.length > 2 ? name.substring(0, 2) + "****" : name + "****";
+  return `${maskedName}@${domain}`;
+}
 
-// function generateReportHTML(reportData: any[]) {
-//   const tableRows = reportData
-//     .map((d) => {
-//       const address = d.latestAddress
-//         ? [d.latestAddress.city, d.latestAddress.zip, d.latestAddress.country]
-//             .filter(Boolean)
-//             .join(", ")
-//         : "N/A";
+function generateReportHTML(reportData: any[]) {
+  const tableRows = reportData
+    .map((d) => {
+      const address = d.latestAddress
+        ? [d.latestAddress.city, d.latestAddress.zip, d.latestAddress.country]
+            .filter(Boolean)
+            .join(", ")
+        : "N/A";
 
-//       return `
-//             <tr>
-//                 <td>${maskEmail(d.email)}</td>
-//                 <td>${address}</td>
-//                 <td style="text-align: center;">${d.flaggedAttempts}</td>
-//                 <td>${
-//                   d.lastAttemptDate
-//                     ? format(new Date(d.lastAttemptDate), "MMM dd, yyyy HH:mm")
-//                     : "N/A"
-//                 }</td>
-//             </tr>
-//         `;
-//     })
-//     .join("");
+      return `
+            <tr>
+                <td>${maskEmail(d.email)}</td>
+                <td>${address}</td>
+                <td style="text-align: center;">${d.flaggedAttempts}</td>
+                <td>${
+                  d.lastAttemptDate
+                    ? format(new Date(d.lastAttemptDate), "MMM dd, yyyy HH:mm")
+                    : "N/A"
+                }</td>
+            </tr>
+        `;
+    })
+    .join("");
 
-//   return `
-//         <!DOCTYPE html>
-//         <html>
-//         <head>
-//             <title>High-Risk Customer Activity Report</title>
-//             <style>
-//                 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #333; margin: 40px; }
-//                 .header { border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 30px; }
-//                 h1 { font-size: 28px; margin: 0; color: #dc2626; }
-//                 p { font-size: 12px; color: #777; margin: 4px 0 0; }
-//                 .summary { margin-bottom: 20px; font-size: 14px; }
+  return `
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>High-Risk Customer Activity Report</title>
+            <style>
+                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #333; margin: 40px; }
+                .header { border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 30px; }
+                h1 { font-size: 28px; margin: 0; color: #dc2626; }
+                p { font-size: 12px; color: #777; margin: 4px 0 0; }
+                .summary { margin-bottom: 20px; font-size: 14px; }
 
-//                 table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-//                 th, td { padding: 12px; border-bottom: 1px solid #eee; text-align: left; font-size: 14px; }
-//                 th { background-color: #f8f9fa; font-weight: 600; color: #495057; border-top: 1px solid #dee2e6; }
-//                 tr:nth-child(even) { background-color: #fcfcfc; }
-//                 .no-data { text-align: center; padding: 40px; color: #777; font-style: italic; }
-//             </style>
-//         </head>
-//         <body>
-//             <div class="header">
-//                 <h1>High-Risk Customer Activity Report</h1>
-//                 <p>Generated on: ${format(new Date(), "yyyy-MM-dd HH:mm")}</p>
-//             </div>
+                table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                th, td { padding: 12px; border-bottom: 1px solid #eee; text-align: left; font-size: 14px; }
+                th { background-color: #f8f9fa; font-weight: 600; color: #495057; border-top: 1px solid #dee2e6; }
+                tr:nth-child(even) { background-color: #fcfcfc; }
+                .no-data { text-align: center; padding: 40px; color: #777; font-style: italic; }
+            </style>
+        </head>
+        <body>
+            <div class="header">
+                <h1>High-Risk Customer Activity Report</h1>
+                <p>Generated on: ${format(new Date(), "yyyy-MM-dd HH:mm")}</p>
+            </div>
 
-//             <div class="summary">
-//                 <p><strong>Purpose:</strong> Highlight repeat high-risk customers interacting with the store.</p>
-//                 <p><strong>Total High-Risk Customers found:</strong> ${
-//                   reportData.length
-//                 }</p>
-//             </div>
+            <div class="summary">
+                <p><strong>Purpose:</strong> Highlight repeat high-risk customers interacting with the store.</p>
+                <p><strong>Total High-Risk Customers found:</strong> ${
+                  reportData.length
+                }</p>
+            </div>
 
-//             ${
-//               reportData.length === 0
-//                 ? '<div class="no-data">No high-risk customer activity found.</div>'
-//                 : `
-//             <table>
-//                 <thead>
-//                     <tr>
-//                         <th>Customer (Masked Email)</th>
-//                         <th>Last Known Location</th>
-//                         <th style="text-align: center;">Flagged Attempts</th>
-//                         <th>Last Attempt Date</th>
-//                     </tr>
-//                 </thead>
-//                 <tbody>
-//                     ${tableRows}
-//                 </tbody>
-//             </table>
-//             `
-//             }
-//         </body>
-//         </html>
-//     `;
-// }
+            ${
+              reportData.length === 0
+                ? '<div class="no-data">No high-risk customer activity found.</div>'
+                : `
+            <table>
+                <thead>
+                    <tr>
+                        <th>Customer (Masked Email)</th>
+                        <th>Last Known Location</th>
+                        <th style="text-align: center;">Flagged Attempts</th>
+                        <th>Last Attempt Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${tableRows}
+                </tbody>
+            </table>
+            `
+            }
+        </body>
+        </html>
+    `;
+}
 
 export const getHighRiskActivityReport = async (
   req: Request,
@@ -179,36 +179,33 @@ export const getHighRiskActivityReport = async (
       `Data fetched. Found ${finalReportData.length} high-risk customers.`,
     );
 
-    // const htmlContent = generateReportHTML(finalReportData);
+    const htmlContent = generateReportHTML(finalReportData);
 
-    // const browser = await puppeteer.launch({
-    //   args: ["--no-sandbox", "--disable-dev-shm-usage"],
-    // });
-    // const page = await browser.newPage();
-    // await page.setViewport({ width: 1200, height: 1600 });
-    // await page.setContent(htmlContent, { waitUntil: "networkidle0" });
+    const browser = await puppeteer.launch({
+      args: ["--no-sandbox", "--disable-dev-shm-usage"],
+    });
+    const page = await browser.newPage();
+    await page.setViewport({ width: 1200, height: 1600 });
+    await page.setContent(htmlContent, { waitUntil: "networkidle0" });
 
-    // await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
-    // const pdfBuffer = await page.pdf({
-    //   format: "A4",
-    //   printBackground: true,
-    //   margin: {
-    //     top: "20px",
-    //     bottom: "40px",
-    //     left: "20px",
-    //     right: "20px",
-    //   },
-    // });
-    // await browser.close();
+    const pdfBuffer = await page.pdf({
+      format: "A4",
+      printBackground: true,
+      margin: {
+        top: "20px",
+        bottom: "40px",
+        left: "20px",
+        right: "20px",
+      },
+    });
+    await browser.close();
 
-    // const fileName = `HighRisk_Activity_Report_${format(
-    //   new Date(),
-    //   "yyyyMMdd",
-    // )}.pdf`;
-    // res.setHeader("Content-Type", "application/pdf");
-    // res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
-    // res.send(pdfBuffer);
+    const fileName = `HighRisk_Activity_Report_${format(
+      new Date(),
+      "yyyyMMdd",
+    )}.pdf`;
 
     await logActivity({
       action: "GENERATE_REPORT",
@@ -217,10 +214,9 @@ export const getHighRiskActivityReport = async (
       meta: { timestamp: new Date().toISOString() },
     });
 
-    res.status(status.OK).json({
-      success: true,
-      data: finalReportData,
-    });
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+    res.send(pdfBuffer);
   } catch (error: any) {
     console.error(
       "ERROR: Failed to generate High-Risk Activity PDF report:",
