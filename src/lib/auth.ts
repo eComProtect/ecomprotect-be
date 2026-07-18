@@ -3,7 +3,7 @@ import { database } from "../configs/connection.config";
 import * as schema from "@/schema/schema";
 import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
-import { admin as adminPlugin, emailOTP } from "better-auth/plugins";
+import { admin as adminPlugin, bearer, emailOTP } from "better-auth/plugins";
 import { env } from "@/utils/env.util";
 import {
   adminApprovalNotificationTemplate,
@@ -65,6 +65,11 @@ export const auth = betterAuth({
   },
 
   plugins: [
+    // Lets a session token be sent as `Authorization: Bearer <token>` instead of
+    // a cookie. Needed for the embedded staff-identity flow: Shopify Admin's
+    // iframe blocks third-party cookies, so a staff member's own login can't
+    // rely on a cookie there — see x-staff-token handling in auth.middleware.ts.
+    bearer(),
     adminPlugin({
       adminRoles: ["admin", "superadmin"],
       ac,

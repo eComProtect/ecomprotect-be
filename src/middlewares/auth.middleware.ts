@@ -117,6 +117,23 @@ export const resolveRequestUser = async (
 ): Promise<User | null> => {
   const authorizationHeader = req.headers["authorization"];
   const apiKeyHeader = req.headers["x-api-key"];
+  const staffTokenHeader = req.headers["x-staff-token"];
+
+  // A staff member's own explicit login always wins over the shop-level App
+  // Bridge resolution below (which can only ever resolve to the store owner —
+  // Shopify's session token has no concept of individual eComProtect staff
+  // accounts). Sent as a separate header, not Authorization, because the
+  // embedded frontend also needs the App Bridge bearer token on every request.
+  if (typeof staffTokenHeader === "string" && staffTokenHeader.length > 0) {
+    const headers = new Headers();
+    headers.set("authorization", `Bearer ${staffTokenHeader}`);
+    const staffSession = await auth.api.getSession({ headers });
+    if (staffSession && staffSession.user) {
+      return staffSession.user as unknown as User;
+    }
+    // Invalid/expired staff token — fall through to the other strategies
+    // rather than hard-failing, same as the other lookups below.
+  }
 
   if (authorizationHeader && authorizationHeader.startsWith("Bearer ")) {
     const bearer = authorizationHeader.substring(7);
