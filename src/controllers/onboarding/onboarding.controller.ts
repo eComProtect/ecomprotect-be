@@ -1,7 +1,7 @@
 import { Request, Response } from "express";
 import status from "http-status";
 import { database } from "@/configs/connection.config";
-import { account, users } from "@/schema/schema";
+import { account, settings, users } from "@/schema/schema";
 import { and, eq, ne } from "drizzle-orm";
 import {
   findUserByShopDomain,
@@ -149,6 +149,29 @@ export const completeSignupController = async (
   // password hasher via auth.$context and write the account row ourselves —
   // this app registers no account-related databaseHooks, so that's the only
   // thing setPassword's own code does beyond this.
+  // The legacy /sign-up/email flow used to create this automatically
+  // (see auth.ts's after-hook) — this is the embedded flow's equivalent
+  // point, since completeSignupController is what actually finishes
+  // onboarding here. Without it, a fresh store has no settings row at all
+  // until someone saves the Settings page once, and fetchSettings/anything
+  // reading defaults off it gets nothing back.
+  const [existingSettings] = await database
+    .select({ id: settings.id })
+    .from(settings)
+    .where(eq(settings.storeId, store.id));
+
+  if (!existingSettings) {
+    await database.insert(settings).values({
+      storeId: store.id,
+      lostParcelThreshold: 3,
+      lostParcelPeriod: 1,
+      requireESignature: false,
+      forceCourierSignedDelivery: false,
+      photoOnDelivery: false,
+      sendCancellationEmail: false,
+    });
+  }
+
   const authContext = await auth.$context;
   const passwordHash = await authContext.password.hash(password);
 
