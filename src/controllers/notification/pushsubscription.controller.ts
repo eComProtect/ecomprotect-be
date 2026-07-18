@@ -112,7 +112,13 @@ export const getPushSubscriptionStatusController = async (
   req: Request,
   res: Response
 ) => {
-  const storeId = req.user?.id;
+  if (!req.user) {
+    res.status(status.UNAUTHORIZED).json({ message: "Unauthorized" });
+    return;
+  }
+
+  const store = await resolveStoreRow(req.user);
+  const storeId = store?.id;
   if (!storeId) {
     res.status(status.UNAUTHORIZED).json({ message: "Unauthorized" });
     return;

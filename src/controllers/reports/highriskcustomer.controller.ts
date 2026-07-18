@@ -7,6 +7,7 @@ import { eq, desc, count, or, and } from "drizzle-orm";
 import { Request, Response } from "express";
 import status from "http-status";
 import puppeteer from "puppeteer";
+import { resolveStoreRow } from "@/middlewares/auth.middleware";
 
 function maskEmail(email: string | null | undefined): string {
   if (!email) return "N/A";
@@ -171,15 +172,22 @@ export const getHighRiskActivityReport = async (
   res: Response,
 ) => {
   try {
-    const user = req.user?.id;
-
-    if (!user) {
+    if (!req.user) {
       res.status(status.BAD_REQUEST).json({ message: "Not a valid user!" });
       logger.error("Not a valid user!");
       return;
     }
 
-    const finalReportData = await fetchHighRiskActivityData(user);
+    // Flagged customers belong to the store (owner row), not whichever
+    // staff member is asking.
+    const store = await resolveStoreRow(req.user);
+    if (!store) {
+      res.status(status.BAD_REQUEST).json({ message: "Not a valid user!" });
+      logger.error("Not a valid user!");
+      return;
+    }
+
+    const finalReportData = await fetchHighRiskActivityData(store.id);
 
     console.log(
       `Data fetched. Found ${finalReportData.length} high-risk customers.`,
@@ -213,15 +221,20 @@ export const getHighRiskActivityReportPdf = async (
   res: Response,
 ) => {
   try {
-    const user = req.user?.id;
-
-    if (!user) {
+    if (!req.user) {
       res.status(status.BAD_REQUEST).json({ message: "Not a valid user!" });
       logger.error("Not a valid user!");
       return;
     }
 
-    const finalReportData = await fetchHighRiskActivityData(user);
+    const store = await resolveStoreRow(req.user);
+    if (!store) {
+      res.status(status.BAD_REQUEST).json({ message: "Not a valid user!" });
+      logger.error("Not a valid user!");
+      return;
+    }
+
+    const finalReportData = await fetchHighRiskActivityData(store.id);
 
     const htmlContent = generateReportHTML(finalReportData);
 
@@ -254,7 +267,7 @@ export const getHighRiskActivityReportPdf = async (
     await logActivity({
       action: "GENERATE_REPORT",
       for: "store",
-      storeId: user,
+      storeId: store.id,
       meta: { timestamp: new Date().toISOString() },
     });
 
