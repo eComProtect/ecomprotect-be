@@ -6,11 +6,9 @@ import { customers } from "@/schema/schema";
 import { eq } from "drizzle-orm";
 import axios from "axios";
 import { logActivity } from "@/service/logactivity.service";
-import { decrypt } from "@/service/encryption.service";
 import { ADMIN_API_VERSION } from "@/configs/shopify.config";
 import {
-  isShopifyTokenExpired,
-  attemptTokenMigration,
+  resolveStoreShopifyAccess,
   shopifyReAuthUrl,
   SHOPIFY_TOKEN_EXPIRED_RESPONSE,
 } from "@/utils/shopify-token.util";
@@ -21,26 +19,22 @@ export const blockCustomer = async (
 ): Promise<void> => {
   try {
     const { customerId } = req.query;
-    const storeUrl = req.user?.shopify_url;
-    const getStoreToken = req.user?.shopify_access_token;
-    let storeToken = getStoreToken ? decrypt(getStoreToken) : null;
 
-    if (isShopifyTokenExpired(req.user?.shopify_token_expires_at)) {
-      const migrated = await attemptTokenMigration({
-        shopDomain: storeUrl ?? "",
-        encryptedToken: getStoreToken ?? "",
-        userId: req.user?.id ?? "",
-        expiresAt: req.user?.shopify_token_expires_at,
-      });
-      if (!migrated) {
-        res.status(status.UNAUTHORIZED).json({
-          ...SHOPIFY_TOKEN_EXPIRED_RESPONSE,
-          reAuthUrl: shopifyReAuthUrl(storeUrl ?? ""),
-        });
-        return;
-      }
-      storeToken = migrated.accessToken;
+    if (!req.user) {
+      res.status(status.UNAUTHORIZED).json({ message: "Not authenticated" });
+      return;
     }
+
+    const resolved = await resolveStoreShopifyAccess(req.user);
+    if (!resolved) {
+      res.status(status.UNAUTHORIZED).json({
+        ...SHOPIFY_TOKEN_EXPIRED_RESPONSE,
+        reAuthUrl: shopifyReAuthUrl(req.user.shopify_url ?? ""),
+      });
+      return;
+    }
+    const { store, accessToken: storeToken } = resolved;
+    const storeUrl = store.shopify_url;
 
     if (!customerId) {
       res
@@ -93,7 +87,7 @@ export const blockCustomer = async (
     }
 
     await logActivity({
-      storeId: req.user?.id ?? "unknown",
+      storeId: store.id,
       action: "BLOCK_CUSTOMER",
       for: "store",
       customerId: customerId as string,
@@ -113,26 +107,22 @@ export const unblockCustomer = async (
 ): Promise<void> => {
   try {
     const { customerId } = req.query;
-    const storeUrl = req.user?.shopify_url;
-    const getStoreToken = req.user?.shopify_access_token;
-    let storeToken = getStoreToken ? decrypt(getStoreToken) : null;
 
-    if (isShopifyTokenExpired(req.user?.shopify_token_expires_at)) {
-      const migrated = await attemptTokenMigration({
-        shopDomain: storeUrl ?? "",
-        encryptedToken: getStoreToken ?? "",
-        userId: req.user?.id ?? "",
-        expiresAt: req.user?.shopify_token_expires_at,
-      });
-      if (!migrated) {
-        res.status(status.UNAUTHORIZED).json({
-          ...SHOPIFY_TOKEN_EXPIRED_RESPONSE,
-          reAuthUrl: shopifyReAuthUrl(storeUrl ?? ""),
-        });
-        return;
-      }
-      storeToken = migrated.accessToken;
+    if (!req.user) {
+      res.status(status.UNAUTHORIZED).json({ message: "Not authenticated" });
+      return;
     }
+
+    const resolved = await resolveStoreShopifyAccess(req.user);
+    if (!resolved) {
+      res.status(status.UNAUTHORIZED).json({
+        ...SHOPIFY_TOKEN_EXPIRED_RESPONSE,
+        reAuthUrl: shopifyReAuthUrl(req.user.shopify_url ?? ""),
+      });
+      return;
+    }
+    const { store, accessToken: storeToken } = resolved;
+    const storeUrl = store.shopify_url;
 
     if (!customerId) {
       res
@@ -215,7 +205,7 @@ export const unblockCustomer = async (
     }
 
     await logActivity({
-      storeId: req.user?.id ?? "unknown",
+      storeId: store.id,
       action: "UNBLOCK_CUSTOMER",
       for: "store",
       customerId: customerId as string,

@@ -5,6 +5,9 @@ import { users } from "@/schema/schema";
 import { or, eq } from "drizzle-orm";
 import { encrypt, decrypt } from "@/service/encryption.service";
 import { logger } from "@/utils/logger.util";
+import { resolveStoreRow } from "@/middlewares/auth.middleware";
+
+type User = typeof users.$inferSelect;
 
 /**
  * Returns true when the Shopify access token needs to be migrated or refreshed.
@@ -104,6 +107,44 @@ export async function attemptTokenMigration(params: {
 export function shopifyReAuthUrl(shopDomain: string): string {
   const cleanDomain = shopDomain.replace(/^https?:\/\//, "");
   return `${env.SHOPIFY_APP_URL}/shopify/install?shop=${cleanDomain}`;
+}
+
+/**
+ * Resolves a controller's Shopify access token off the correct row — the
+ * store/owner's, not the requesting session's. A staff member's own row
+ * carries a copy of the owner's shopify_access_token made at staff-creation
+ * time, but never a shopify_token_expires_at (it isn't part of the staff
+ * creation payload and isn't a registered better-auth field), so it's always
+ * null on a staff row. isShopifyTokenExpired(null) is then always true,
+ * triggering attemptTokenMigration on a token that's already an expiring one
+ * copied from the owner — which Shopify always rejects with a 400 — forcing
+ * a re-auth loop for every staff session on every request. Resolving through
+ * resolveStoreRow first means migration/expiry always operates on the
+ * store's own real state, and callers get the store's id back for scoping
+ * writes (customers.storeId etc.), not the staff member's own id.
+ */
+export async function resolveStoreShopifyAccess(
+  user: User
+): Promise<{ store: User; accessToken: string } | null> {
+  const store = await resolveStoreRow(user);
+  if (!store || !store.shopify_url || !store.shopify_access_token) {
+    return null;
+  }
+
+  let accessToken = decrypt(store.shopify_access_token);
+
+  if (isShopifyTokenExpired(store.shopify_token_expires_at)) {
+    const migrated = await attemptTokenMigration({
+      shopDomain: store.shopify_url,
+      encryptedToken: store.shopify_access_token,
+      userId: store.id,
+      expiresAt: store.shopify_token_expires_at,
+    });
+    if (!migrated) return null;
+    accessToken = migrated.accessToken;
+  }
+
+  return { store, accessToken };
 }
 
 export const SHOPIFY_TOKEN_EXPIRED_RESPONSE = {

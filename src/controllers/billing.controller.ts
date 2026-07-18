@@ -3,7 +3,6 @@ import status from "http-status";
 import { database } from "@/configs/connection.config";
 import { users } from "@/schema/schema";
 import { eq } from "drizzle-orm";
-import { decrypt } from "@/service/encryption.service";
 import { env } from "@/utils/env.util";
 import { logger } from "@/utils/logger.util";
 import {
@@ -12,9 +11,9 @@ import {
   plansForMerchant,
   resolvePlanAmount,
 } from "@/utils/billing.util";
+import { resolveStoreRow } from "@/middlewares/auth.middleware";
 import {
-  isShopifyTokenExpired,
-  attemptTokenMigration,
+  resolveStoreShopifyAccess,
   shopifyReAuthUrl,
   SHOPIFY_TOKEN_EXPIRED_RESPONSE,
 } from "@/utils/shopify-token.util";
@@ -44,32 +43,27 @@ export const billingStatusController = async (
   res: Response
 ): Promise<void> => {
   try {
-    const shopUrl = req.user?.shopify_url;
-    const encryptedToken = req.user?.shopify_access_token;
-
-    if (!shopUrl || !encryptedToken) {
+    if (!req.user) {
       res.status(status.OK).json({ active: false, subscriptions: [] });
       return;
     }
 
-    let accessToken = decrypt(encryptedToken);
-
-    if (isShopifyTokenExpired(req.user?.shopify_token_expires_at)) {
-      const migrated = await attemptTokenMigration({
-        shopDomain: shopUrl,
-        encryptedToken,
-        userId: req.user!.id,
-        expiresAt: req.user?.shopify_token_expires_at,
-      });
-      if (!migrated) {
-        res.status(status.UNAUTHORIZED).json({
-          ...SHOPIFY_TOKEN_EXPIRED_RESPONSE,
-          reAuthUrl: shopifyReAuthUrl(shopUrl),
-        });
-        return;
-      }
-      accessToken = migrated.accessToken;
+    const store = await resolveStoreRow(req.user);
+    if (!store || !store.shopify_url || !store.shopify_access_token) {
+      res.status(status.OK).json({ active: false, subscriptions: [] });
+      return;
     }
+    const shopUrl = store.shopify_url;
+
+    const resolved = await resolveStoreShopifyAccess(req.user);
+    if (!resolved) {
+      res.status(status.UNAUTHORIZED).json({
+        ...SHOPIFY_TOKEN_EXPIRED_RESPONSE,
+        reAuthUrl: shopifyReAuthUrl(shopUrl),
+      });
+      return;
+    }
+    const { accessToken } = resolved;
 
     const subscriptions = await getActiveSubscriptions(shopUrl, accessToken);
     const active = subscriptions.some((s) => s.status === "ACTIVE");
@@ -89,14 +83,20 @@ export const subscribeController = async (
   res: Response
 ): Promise<void> => {
   try {
-    const shopUrl = req.user?.shopify_url;
-    const encryptedToken = req.user?.shopify_access_token;
     const { package: planName, host, orders } = req.body ?? {};
 
-    if (!shopUrl || !encryptedToken) {
+    if (!req.user) {
+      res.status(status.UNAUTHORIZED).json({ message: "Not authenticated" });
+      return;
+    }
+
+    const store = await resolveStoreRow(req.user);
+    if (!store || !store.shopify_url || !store.shopify_access_token) {
       res.status(status.BAD_REQUEST).json({ message: "Store is not connected." });
       return;
     }
+    const shopUrl = store.shopify_url;
+
     if (!planName) {
       res.status(status.BAD_REQUEST).json({ message: "package is required." });
       return;
@@ -105,7 +105,7 @@ export const subscribeController = async (
     // The order tier drives the price: prefer what the merchant just selected,
     // else the previously stored value.
     const ordersTier: string | undefined =
-      orders || req.user?.average_orders_per_month || undefined;
+      orders || store.average_orders_per_month || undefined;
 
     const resolved = resolvePlanAmount(planName, ordersTier);
     if (!resolved) {
@@ -125,24 +125,15 @@ export const subscribeController = async (
     // Return into the embedded app so the subscription gate re-checks and unlocks.
     const returnUrl = `${env.FRONTEND_DOMAIN}/?${params.toString()}`;
 
-    let accessToken = decrypt(encryptedToken);
-
-    if (isShopifyTokenExpired(req.user?.shopify_token_expires_at)) {
-      const migrated = await attemptTokenMigration({
-        shopDomain: shopUrl,
-        encryptedToken,
-        userId: req.user!.id,
-        expiresAt: req.user?.shopify_token_expires_at,
+    const storeAccess = await resolveStoreShopifyAccess(req.user);
+    if (!storeAccess) {
+      res.status(status.UNAUTHORIZED).json({
+        ...SHOPIFY_TOKEN_EXPIRED_RESPONSE,
+        reAuthUrl: shopifyReAuthUrl(shopUrl),
       });
-      if (!migrated) {
-        res.status(status.UNAUTHORIZED).json({
-          ...SHOPIFY_TOKEN_EXPIRED_RESPONSE,
-          reAuthUrl: shopifyReAuthUrl(shopUrl),
-        });
-        return;
-      }
-      accessToken = migrated.accessToken;
+      return;
     }
+    const { accessToken } = storeAccess;
 
     const { confirmationUrl, subscriptionId } = await createAppSubscription({
       shopUrl,
@@ -165,7 +156,7 @@ export const subscribeController = async (
         ...(ordersTier ? { average_orders_per_month: ordersTier } : {}),
         updatedAt: new Date(),
       })
-      .where(eq(users.id, req.user!.id));
+      .where(eq(users.id, store.id));
 
     logger.info(
       `[Billing] Subscription created (${subscriptionId}) for ${shopDomain}: ${resolved.plan.name} @ ${resolved.amount} GBP`

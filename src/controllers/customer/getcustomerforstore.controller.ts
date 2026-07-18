@@ -7,7 +7,6 @@ import axios from "axios";
 import { logger } from "@/utils/logger.util";
 import { calculateCustomerRisk } from "@/service/riskycustomer.service";
 import { logActivity } from "@/service/logactivity.service";
-import { decrypt } from "@/service/encryption.service";
 import { ADMIN_API_VERSION } from "@/configs/shopify.config";
 import {
   buildReturnsSelection,
@@ -15,8 +14,7 @@ import {
   hasReturnAccessError,
 } from "@/service/shopify-loss-events.service";
 import {
-  isShopifyTokenExpired,
-  attemptTokenMigration,
+  resolveStoreShopifyAccess,
   shopifyReAuthUrl,
   SHOPIFY_TOKEN_EXPIRED_RESPONSE,
 } from "@/utils/shopify-token.util";
@@ -51,37 +49,30 @@ export const getCustomerRefundsAcrossStores = async (
   res: Response
 ): Promise<void> => {
   try {
-    const data = req.user;
-    const storeUrl = data?.shopify_url;
-
-    const getAccessToken = data?.shopify_access_token;
-    const storeId = data?.id;
-
-    if (!storeUrl || !getAccessToken || !storeId) {
-      res
-        .status(status.UNAUTHORIZED)
-        .json({ error: "Missing Shopify credentials or Store ID" });
+    if (!req.user) {
+      res.status(status.UNAUTHORIZED).json({ error: "Not authenticated" });
       return;
     }
 
-    let accessToken = decrypt(getAccessToken!);
-
-    if (isShopifyTokenExpired(data?.shopify_token_expires_at)) {
-      const migrated = await attemptTokenMigration({
-        shopDomain: storeUrl,
-        encryptedToken: getAccessToken!,
-        userId: storeId!,
-        expiresAt: data?.shopify_token_expires_at,
-      });
-      if (!migrated) {
-        res.status(status.UNAUTHORIZED).json({
-          ...SHOPIFY_TOKEN_EXPIRED_RESPONSE,
-          reAuthUrl: shopifyReAuthUrl(storeUrl),
-        });
+    const resolved = await resolveStoreShopifyAccess(req.user);
+    if (!resolved) {
+      const storeUrl = req.user.shopify_url;
+      if (!storeUrl) {
+        res
+          .status(status.UNAUTHORIZED)
+          .json({ error: "Missing Shopify credentials or Store ID" });
         return;
       }
-      accessToken = migrated.accessToken;
+      res.status(status.UNAUTHORIZED).json({
+        ...SHOPIFY_TOKEN_EXPIRED_RESPONSE,
+        reAuthUrl: shopifyReAuthUrl(storeUrl),
+      });
+      return;
     }
+
+    const { store, accessToken } = resolved;
+    const storeUrl = store.shopify_url!;
+    const storeId = store.id;
 
     const settingsResult = await database
       .select()
