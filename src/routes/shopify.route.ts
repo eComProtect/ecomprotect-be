@@ -8,6 +8,7 @@ import { registerRequiredWebhooks } from "@/utils/webhook.util";
 import { env } from "@/utils/env.util";
 import { logger } from "@/utils/logger.util";
 import { createId } from "@paralleldrive/cuid2";
+import { logActivity } from "@/service/logactivity.service";
 
 const shopifyRouter = Router();
 
@@ -91,12 +92,18 @@ shopifyRouter.get("/callback", async (req: Request, res: Response): Promise<void
 
     logger.info(`[OAuth] Callback success for shop: ${shopDomain}`);
 
-    // Upsert user record
+    // Upsert user record. Scoped to the owner row (storeOwnerId IS NULL) —
+    // without this, a store with staff accounts (which share shopify_url)
+    // could resolve "existingUser" to a staff row instead of the owner,
+    // same class of bug fixed elsewhere this session in findUserByShopDomain.
     const existingUser = await database.query.users.findFirst({
-      where: (u, { or, eq }) =>
-        or(
-          eq(u.shopify_url, `https://${shopDomain}`),
-          eq(u.shopify_url, shopDomain)
+      where: (u, { and, or, eq, isNull }) =>
+        and(
+          or(
+            eq(u.shopify_url, `https://${shopDomain}`),
+            eq(u.shopify_url, shopDomain)
+          ),
+          isNull(u.storeOwnerId)
         ),
     });
 
@@ -118,6 +125,13 @@ shopifyRouter.get("/callback", async (req: Request, res: Response): Promise<void
         );
 
       logger.info(`[OAuth] Updated tokens for existing store: ${shopDomain}`);
+
+      await logActivity({
+        action: "APP_REINSTALLED",
+        for: "store",
+        storeId: existingUser.id,
+        meta: { shopDomain, reinstalledAt: new Date().toISOString() },
+      });
     } else {
       // Create minimal user record for new merchants
       const newUserId = createId();
@@ -140,6 +154,13 @@ shopifyRouter.get("/callback", async (req: Request, res: Response): Promise<void
       });
 
       logger.info(`[OAuth] Created new user record for store: ${shopDomain}`);
+
+      await logActivity({
+        action: "APP_INSTALLED",
+        for: "store",
+        storeId: newUserId,
+        meta: { shopDomain, installedAt: new Date().toISOString() },
+      });
     }
 
     // Register operational, compliance, and uninstall webhooks
