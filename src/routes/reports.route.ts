@@ -2,7 +2,7 @@ import { combinedReport } from "@/controllers/reports/combinationreport.controll
 import { customerReport } from "@/controllers/reports/customerreport.controller";
 import { getStoreGrowthMetrics } from "@/controllers/reports/customersbgrowth.controller";
 import { effectivenessController } from "@/controllers/reports/effectivenessreport.controller";
-import { getHighRiskActivityReport } from "@/controllers/reports/highriskcustomer.controller";
+import { getHighRiskActivityReport, getHighRiskActivityReportPdf } from "@/controllers/reports/highriskcustomer.controller";
 import { getLossPreventionValueReport } from "@/controllers/reports/lossprevention.controller";
 import { OnboardingReportController } from "@/controllers/reports/onboardingreport.controller";
 import { storeReportActivity } from "@/controllers/reports/storereport.controller";
@@ -22,6 +22,12 @@ reportsRouter.get(
   protectRoute,
   requireActiveOnboarding,
   getHighRiskActivityReport
+);
+reportsRouter.get(
+  "/high-risk-csutomer-report/pdf",
+  protectRoute,
+  requireActiveOnboarding,
+  getHighRiskActivityReportPdf
 );
 
 reportsRouter.get(

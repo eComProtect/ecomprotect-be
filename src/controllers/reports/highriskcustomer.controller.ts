@@ -100,6 +100,72 @@ function generateReportHTML(reportData: any[]) {
     `;
 }
 
+/** Shared data query used by both the JSON (table) and PDF (download) endpoints. */
+async function fetchHighRiskActivityData(storeId: string) {
+  const flaggedCustomers = await database
+    .select({
+      id: customers.id,
+      email: customers.email,
+      riskySience: customers.riskySince,
+    })
+    .from(customers)
+    .where(and(eq(customers.flagged, true), eq(customers.storeId, storeId)));
+
+  const finalReportData = await Promise.all(
+    flaggedCustomers.map(async (customer) => {
+      // A. Count Flagged Attempts (Orders that were flagged or auto-cancelled)
+      const [attemptsResult] = await database
+        .select({ count: count() })
+        .from(orders)
+        .where(
+          and(
+            eq(orders.customerId, customer.id),
+            or(eq(orders.flagged, true), eq(orders.autoCancel, true)),
+          ),
+        );
+
+      const [lastOrderDetails] = await database
+        .select({
+          createdAt: orders.createdAt,
+          city: fulfillmentOrders.destCity,
+          zip: fulfillmentOrders.destZip,
+          country: fulfillmentOrders.destCountry,
+        })
+        .from(orders)
+        .leftJoin(fulfillmentOrders, eq(orders.id, fulfillmentOrders.orderId))
+        .where(eq(orders.customerId, customer.id))
+        .orderBy(desc(orders.createdAt))
+        .limit(1);
+
+      return {
+        customerId: customer.id,
+        email: customer.email,
+        flaggedAttempts: attemptsResult?.count ?? 0,
+        lastAttemptDate: lastOrderDetails?.createdAt ?? null,
+        latestAddress: lastOrderDetails
+          ? {
+            city: lastOrderDetails.city,
+            zip: lastOrderDetails.zip,
+            country: lastOrderDetails.country,
+          }
+          : null,
+      };
+    }),
+  );
+
+  finalReportData.sort((a, b) => {
+    const dateA = a.lastAttemptDate ? new Date(a.lastAttemptDate).getTime() : 0;
+    const dateB = b.lastAttemptDate ? new Date(b.lastAttemptDate).getTime() : 0;
+    return dateB - dateA;
+  });
+
+  return finalReportData;
+}
+
+/**
+ * GET /api/reports/high-risk-csutomer-report
+ * JSON data for the on-page High-Risk Activity table (usefetchriskycustomer.ts).
+ */
 export const getHighRiskActivityReport = async (
   req: Request,
   res: Response,
@@ -113,71 +179,49 @@ export const getHighRiskActivityReport = async (
       return;
     }
 
-    const flaggedCustomers = await database
-      .select({
-        id: customers.id,
-        email: customers.email,
-        riskySience: customers.riskySince,
-      })
-      .from(customers)
-      .where(and(eq(customers.flagged, true), eq(customers.storeId, user)));
-
-    // 2. Gather Metrics for each High-Risk Customer
-    const finalReportData = await Promise.all(
-      flaggedCustomers.map(async (customer) => {
-        // A. Count Flagged Attempts (Orders that were flagged or auto-cancelled)
-        const [attemptsResult] = await database
-          .select({ count: count() })
-          .from(orders)
-          .where(
-            and(
-              eq(orders.customerId, customer.id),
-              or(eq(orders.flagged, true), eq(orders.autoCancel, true)),
-            ),
-          );
-
-        const [lastOrderDetails] = await database
-          .select({
-            createdAt: orders.createdAt,
-            city: fulfillmentOrders.destCity,
-            zip: fulfillmentOrders.destZip,
-            country: fulfillmentOrders.destCountry,
-          })
-          .from(orders)
-          .leftJoin(fulfillmentOrders, eq(orders.id, fulfillmentOrders.orderId))
-          .where(eq(orders.customerId, customer.id))
-          .orderBy(desc(orders.createdAt))
-          .limit(1);
-
-        return {
-          customerId: customer.id,
-          email: customer.email,
-          flaggedAttempts: attemptsResult?.count ?? 0,
-          lastAttemptDate: lastOrderDetails?.createdAt ?? null,
-          latestAddress: lastOrderDetails
-            ? {
-              city: lastOrderDetails.city,
-              zip: lastOrderDetails.zip,
-              country: lastOrderDetails.country,
-            }
-            : null,
-        };
-      }),
-    );
-
-    finalReportData.sort((a, b) => {
-      const dateA = a.lastAttemptDate
-        ? new Date(a.lastAttemptDate).getTime()
-        : 0;
-      const dateB = b.lastAttemptDate
-        ? new Date(b.lastAttemptDate).getTime()
-        : 0;
-      return dateB - dateA;
-    });
+    const finalReportData = await fetchHighRiskActivityData(user);
 
     console.log(
       `Data fetched. Found ${finalReportData.length} high-risk customers.`,
     );
+
+    res.status(status.OK).json({
+      success: true,
+      data: finalReportData,
+    });
+  } catch (error: any) {
+    console.error(
+      "ERROR: Failed to fetch High-Risk Activity report data:",
+      error,
+    );
+    res.status(status.INTERNAL_SERVER_ERROR).send({
+      message: "Could not fetch the report.",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * GET /api/reports/high-risk-csutomer-report/pdf
+ * PDF download for the "Download Customer Activity" button (suspiciousorder.tsx).
+ * Kept on a separate route from the JSON endpoint above — both were previously
+ * the same route, which meant one broke the other depending on which content
+ * type it returned.
+ */
+export const getHighRiskActivityReportPdf = async (
+  req: Request,
+  res: Response,
+) => {
+  try {
+    const user = req.user?.id;
+
+    if (!user) {
+      res.status(status.BAD_REQUEST).json({ message: "Not a valid user!" });
+      logger.error("Not a valid user!");
+      return;
+    }
+
+    const finalReportData = await fetchHighRiskActivityData(user);
 
     const htmlContent = generateReportHTML(finalReportData);
 
