@@ -2,6 +2,7 @@ import { database } from "@/configs/connection.config";
 import { customers, orders } from "@/schema/schema";
 import { between, eq, and } from "drizzle-orm";
 import { Request, Response } from "express";
+import { resolveStoreRow } from "@/middlewares/auth.middleware";
 
 // Suspicious Orders Summary
 export const getSuspiciousOrdersSummary = async (
@@ -10,9 +11,16 @@ export const getSuspiciousOrdersSummary = async (
 ) => {
   try {
     const { startDate, endDate } = req.query;
-    const userId = req.user?.id;
-    console.log(userId);
-    if (!userId) {
+    if (!req.user) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    // Orders belong to the store (owner row), not whichever staff member
+    // is asking.
+    const store = await resolveStoreRow(req.user);
+    const storeId = store?.id;
+    if (!storeId) {
       res.status(401).json({ error: "Unauthorized" });
       return;
     }
@@ -34,7 +42,7 @@ export const getSuspiciousOrdersSummary = async (
       .innerJoin(customers, eq(orders.customerId, customers.id))
       .where(
         and(
-          eq(customers.storeId, userId),
+          eq(customers.storeId, storeId),
           between(orders.createdAt, start, end),
         ),
       );
@@ -45,9 +53,15 @@ export const getSuspiciousOrdersSummary = async (
 
     const autoCancelled = allOrders.filter((o) => o.autoCancel).length;
 
-    const preventedValue = allOrders
-      .filter((o) => o.flagged || o.autoCancel)
-      .reduce((sum, o) => sum + Number(o.totalAmount ?? 0), 0);
+    // totalAmount comes back as a numeric/decimal string from Postgres — summing
+    // floats accumulates rounding drift (e.g. 8277.160000000002), so round once
+    // to the nearest penny after the sum rather than per-item.
+    const preventedValue =
+      Math.round(
+        allOrders
+          .filter((o) => o.flagged || o.autoCancel)
+          .reduce((sum, o) => sum + Number(o.totalAmount ?? 0), 0) * 100
+      ) / 100;
 
     // Chart data (group by day)
     const flaggedByDay: Record<string, number> = {};

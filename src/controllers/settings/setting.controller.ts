@@ -3,13 +3,24 @@ import { settings } from "@/schema/schema";
 import status from "http-status";
 import { Request, Response } from "express";
 import { eq } from "drizzle-orm";
+import { resolveStoreRow } from "@/middlewares/auth.middleware";
 
 export const createSettings = async (
   req: Request,
   res: Response
 ): Promise<void> => {
   try {
-    const storeId = (req as any).user?.id;
+    const user = (req as any).user;
+    if (!user) {
+      res.status(status.UNAUTHORIZED).json({ message: "Not authenticated" });
+      return;
+    }
+
+    // Settings belong to the store (owner row) — without this, a staff
+    // member saving settings would silently create an orphaned duplicate row
+    // scoped to their own id instead of updating the real store's settings.
+    const store = await resolveStoreRow(user);
+    const storeId = store?.id;
 
     if (!storeId) {
       res.status(status.BAD_REQUEST).json({ message: "Store ID is required" });

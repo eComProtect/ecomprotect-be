@@ -6,7 +6,7 @@ import { desc } from "drizzle-orm";
 
 export const getActivities = async (req: Request, res: Response) => {
   try {
-    const limit = parseInt((req.query.limit as string) ?? "3", 3);
+    const limit = parseInt((req.query.limit as string) ?? "10", 10);
     const records = await database
       .select()
       .from(activities)

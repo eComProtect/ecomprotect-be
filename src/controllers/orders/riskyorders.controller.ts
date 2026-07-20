@@ -4,42 +4,36 @@ import { calculateRiskyOrders } from "@/service/risk.service";
 import { Request, Response } from "express";
 import status from "http-status";
 import { eq } from "drizzle-orm";
-import { decrypt } from "@/service/encryption.service";
 import {
-  isShopifyTokenExpired,
-  attemptTokenMigration,
+  resolveStoreShopifyAccess,
   shopifyReAuthUrl,
   SHOPIFY_TOKEN_EXPIRED_RESPONSE,
 } from "@/utils/shopify-token.util";
 
 export const getRiskyOrders = async (req: Request, res: Response) => {
   try {
-    const storeId = req.user?.id;
     const customerId = req.query.customerId as string;
-    const storeUrl = req.user?.shopify_url;
-    const getAccessToken = req.user?.shopify_access_token;
-    let accessToken = getAccessToken ? decrypt(getAccessToken) : null;
 
-    if (isShopifyTokenExpired(req.user?.shopify_token_expires_at)) {
-      const migrated = await attemptTokenMigration({
-        shopDomain: storeUrl ?? "",
-        encryptedToken: getAccessToken ?? "",
-        userId: storeId ?? "",
-        expiresAt: req.user?.shopify_token_expires_at,
-      });
-      if (!migrated) {
-        res.status(status.UNAUTHORIZED).json({
-          ...SHOPIFY_TOKEN_EXPIRED_RESPONSE,
-          reAuthUrl: shopifyReAuthUrl(storeUrl ?? ""),
-        });
-        return;
-      }
-      accessToken = migrated.accessToken;
+    if (!req.user) {
+      res.status(status.UNAUTHORIZED).json({ message: "Not authenticated" });
+      return;
     }
 
-    if (!storeId || !customerId || !storeUrl || !accessToken) {
+    const resolved = await resolveStoreShopifyAccess(req.user);
+    if (!resolved) {
+      res.status(status.UNAUTHORIZED).json({
+        ...SHOPIFY_TOKEN_EXPIRED_RESPONSE,
+        reAuthUrl: shopifyReAuthUrl(req.user.shopify_url ?? ""),
+      });
+      return;
+    }
+    const { store, accessToken } = resolved;
+    const storeId = store.id;
+    const storeUrl = store.shopify_url!;
+
+    if (!customerId) {
       res.status(status.BAD_REQUEST).json({
-        message: "Store ID, Customer ID, Shopify URL, and Token are required",
+        message: "Customer ID is required",
       });
       return;
     }

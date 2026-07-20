@@ -4,11 +4,9 @@ import axios from "axios";
 import { database } from "@/configs/connection.config";
 import { users } from "@/schema/schema";
 import { eq } from "drizzle-orm";
-import { decrypt } from "@/service/encryption.service";
 import { ADMIN_API_VERSION } from "@/configs/shopify.config";
 import {
-  isShopifyTokenExpired,
-  attemptTokenMigration,
+  resolveStoreShopifyAccess,
   shopifyReAuthUrl,
   SHOPIFY_TOKEN_EXPIRED_RESPONSE,
 } from "@/utils/shopify-token.util";
@@ -41,36 +39,19 @@ export const getCustomerRefundHistoryFromShopify = async (
       return;
     }
 
-    const storeUrl = userData?.shopify_url;
-    const getAccessToken = userData?.shopify_access_token;
-    let accessToken = getAccessToken ? decrypt(getAccessToken) : null;
-
-    if (isShopifyTokenExpired(userData?.shopify_token_expires_at)) {
-      const migrated = await attemptTokenMigration({
-        shopDomain: storeUrl ?? "",
-        encryptedToken: getAccessToken ?? "",
-        userId: userData.id,
-        expiresAt: userData?.shopify_token_expires_at,
+    const resolved = await resolveStoreShopifyAccess(userData);
+    if (!resolved) {
+      res.status(status.UNAUTHORIZED).json({
+        ...SHOPIFY_TOKEN_EXPIRED_RESPONSE,
+        reAuthUrl: shopifyReAuthUrl(userData.shopify_url ?? ""),
       });
-      if (!migrated) {
-        res.status(status.UNAUTHORIZED).json({
-          ...SHOPIFY_TOKEN_EXPIRED_RESPONSE,
-          reAuthUrl: shopifyReAuthUrl(storeUrl ?? ""),
-        });
-        return;
-      }
-      accessToken = migrated.accessToken;
+      return;
     }
+    const { store, accessToken } = resolved;
+    const storeUrl = store.shopify_url;
 
     console.log("customerId", customerId);
     console.log("Query ID:---->", req.query);
-
-    if (!storeUrl || !accessToken) {
-      res
-        .status(status.UNAUTHORIZED)
-        .json({ error: "Missing Shopify credentials" });
-      return;
-    }
 
     if (!customerId) {
       res.status(status.BAD_REQUEST).json({ error: "Customer ID is required" });

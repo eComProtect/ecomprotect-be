@@ -3,7 +3,7 @@ import { database } from "../configs/connection.config";
 import * as schema from "@/schema/schema";
 import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
-import { admin as adminPlugin, emailOTP } from "better-auth/plugins";
+import { admin as adminPlugin, bearer, emailOTP } from "better-auth/plugins";
 import { env } from "@/utils/env.util";
 import {
   adminApprovalNotificationTemplate,
@@ -19,6 +19,7 @@ import { ac, manager, support, admin, superadmin, owner } from "./permission";
 import { decrypt, encrypt } from "@/service/encryption.service";
 import { users } from "@/schema/schema";
 import { sendEmail } from "@/configs/brevo.config";
+import { logActivity } from "@/service/logactivity.service";
 
 const isProduction = process.env.NODE_ENV === "production";
 
@@ -65,6 +66,11 @@ export const auth = betterAuth({
   },
 
   plugins: [
+    // Lets a session token be sent as `Authorization: Bearer <token>` instead of
+    // a cookie. Needed for the embedded staff-identity flow: Shopify Admin's
+    // iframe blocks third-party cookies, so a staff member's own login can't
+    // rely on a cookie there — see x-staff-token handling in auth.middleware.ts.
+    bearer(),
     adminPlugin({
       adminRoles: ["admin", "superadmin"],
       ac,
@@ -423,6 +429,56 @@ export const auth = betterAuth({
           } catch (err) {
             console.error("Failed registering webhook after signup:", err);
           }
+        }
+      }
+
+      // Staff creation (Create Staff page → authClient.admin.createUser) goes
+      // straight through better-auth's admin plugin — no custom controller
+      // exists for it, so this was the only place to log it at all.
+      if (ctx.path === "/admin/create-user") {
+        try {
+          const createdEmail = normalizeEmail(ctx.body?.email);
+          const createdUser = createdEmail
+            ? await findUserByEmail(createdEmail)
+            : null;
+
+          if (createdUser) {
+            await logActivity({
+              action: "STAFF_INVITED",
+              for: "store",
+              storeId: createdUser.storeOwnerId ?? createdUser.id,
+              meta: {
+                invitedEmail: createdUser.email,
+                role: createdUser.role,
+                invitedBy: ctx.context.session?.user?.id ?? null,
+              },
+            });
+          }
+        } catch (err) {
+          console.error("Failed to log STAFF_INVITED activity:", err);
+        }
+      }
+
+      // Staff accepting their invite verifies their email via the emailOTP
+      // plugin (see acceptinvitation.page.tsx). Guarded to role !== "owner"
+      // since this same endpoint could in principle verify any account.
+      if (ctx.path === "/email-otp/verify-email") {
+        try {
+          const verifiedEmail = normalizeEmail(ctx.body?.email);
+          const verifiedUser = verifiedEmail
+            ? await findUserByEmail(verifiedEmail)
+            : null;
+
+          if (verifiedUser?.emailVerified && verifiedUser.role !== "owner") {
+            await logActivity({
+              action: "STAFF_JOINED",
+              for: "store",
+              storeId: verifiedUser.storeOwnerId ?? verifiedUser.id,
+              meta: { email: verifiedUser.email, role: verifiedUser.role },
+            });
+          }
+        } catch (err) {
+          console.error("Failed to log STAFF_JOINED activity:", err);
         }
       }
     }),

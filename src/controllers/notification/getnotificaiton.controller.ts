@@ -4,14 +4,23 @@ import { notifications, customers } from "@/schema/schema";
 import { logger } from "@/utils/logger.util";
 import { Request, Response } from "express";
 import status from "http-status";
+import { resolveStoreRow } from "@/middlewares/auth.middleware";
 
 export const getNotificationController = async (
   req: Request,
   res: Response
 ): Promise<void> => {
   try {
-    const userId = req.user?.id;
-    if (!userId) {
+    if (!req.user) {
+      res.status(status.UNAUTHORIZED).json({ message: "Unauthorized" });
+      return;
+    }
+
+    // Notifications belong to the store (owner row), not whichever staff
+    // member is asking.
+    const store = await resolveStoreRow(req.user);
+    const storeId = store?.id;
+    if (!storeId) {
       res.status(status.UNAUTHORIZED).json({ message: "Unauthorized" });
       return;
     }
@@ -23,7 +32,7 @@ export const getNotificationController = async (
       })
       .from(notifications)
       .leftJoin(customers, eq(notifications.customerId, customers.id))
-      .where(eq(notifications.storeId, userId as string))
+      .where(eq(notifications.storeId, storeId))
       .orderBy(desc(notifications.createdAt));
 
     const data = notifs.map((row) => {
