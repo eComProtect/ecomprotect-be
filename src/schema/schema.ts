@@ -9,11 +9,12 @@ import {
   bigint,
   ReferenceConfig,
   json,
+  uniqueIndex,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 // import { createInsertSchema } from "drizzle-zod";
 import { createId } from "@paralleldrive/cuid2";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 
 const timeStamps = {
   createdAt: timestamp("created_at").defaultNow(),
@@ -68,7 +69,21 @@ export const users = pgTable("users", {
   shopify_url: text("shopify_url"),
   shopify_token_expires_at: timestamp("shopify_token_expires_at"),
   totalSearches: integer("total_searches").default(0),
-});
+}, (table) => [
+  // Enforces "one owner row per shop" — but only among owner rows
+  // (store_owner_id IS NULL). Staff rows deliberately copy their owner's
+  // shopify_url verbatim (see findUserByShopDomain's comment), so a
+  // table-wide unique constraint would break staff provisioning entirely.
+  // This partial index is what makes the just-in-time Token Exchange
+  // provisioning in auth.middleware.ts's findUserBySessionToken race-safe:
+  // two concurrent first-load requests for the same brand-new shop can both
+  // attempt an insert, but only one wins; the loser's onConflictDoNothing
+  // returns zero rows and it re-queries for the winner's row instead of
+  // creating a duplicate owner.
+  uniqueIndex("users_owner_shopify_url_unique")
+    .on(table.shopify_url)
+    .where(sql`${table.storeOwnerId} IS NULL`),
+]);
 
 export const customers = pgTable("customers", {
   id: text("id").primaryKey(),
