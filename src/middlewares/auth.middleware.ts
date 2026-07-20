@@ -81,16 +81,6 @@ export const resolveStoreRow = async (user: User): Promise<User | null> => {
     .from(users)
     .where(eq(users.id, user.storeOwnerId));
 
-  if (!owner) {
-    // TEMP diagnostic — see matching note in resolveRequestUser's staff-token
-    // branch. This is the exact call that produces onboardingStatus:null in
-    // requireActiveOnboarding's 403 response.
-    logger.warn(
-      `[StoreResolve] storeOwnerId=${user.storeOwnerId} on user id=${user.id} email=${user.email} ` +
-        `does not match any existing users row.`
-    );
-  }
-
   return owner || null;
 };
 
@@ -245,16 +235,7 @@ export const resolveRequestUser = async (
     headers.set("authorization", `Bearer ${staffTokenHeader}`);
     const staffSession = await auth.api.getSession({ headers });
     if (staffSession && staffSession.user) {
-      const u = staffSession.user as unknown as User;
-      // TEMP diagnostic — tracking down a 403 storm where requireActiveOnboarding
-      // gets onboardingStatus:null for staff-signed-in sessions. Remove once
-      // confirmed whether better-auth's session.user actually carries
-      // storeOwnerId (and with what value) versus the raw users-table row shape.
-      logger.info(
-        `[StaffAuth] resolved via x-staff-token: id=${u.id} email=${u.email} role=${u.role} ` +
-          `storeOwnerId=${JSON.stringify((u as any).storeOwnerId)} rawKeys=${Object.keys(u as any).join(",")}`
-      );
-      return u;
+      return staffSession.user as unknown as User;
     }
     // Invalid/expired staff token — fall through to the other strategies
     // rather than hard-failing, same as the other lookups below.
