@@ -1,16 +1,10 @@
 import { Request, Response, NextFunction } from "express";
-import { RequestedTokenType } from "@shopify/shopify-api";
 import { auth } from "@/lib/auth";
 import { shopify } from "@/configs/shopify.config";
 import { users } from "@/schema/schema";
 import { database } from "@/configs/connection.config";
-import { eq, or, and, isNull, sql } from "drizzle-orm";
+import { eq, or, and, isNull } from "drizzle-orm";
 import status from "http-status";
-import { encrypt } from "@/service/encryption.service";
-import { registerRequiredWebhooks } from "@/utils/webhook.util";
-import { env } from "@/utils/env.util";
-import { logger } from "@/utils/logger.util";
-import { createId } from "@paralleldrive/cuid2";
 
 type User = typeof users.$inferSelect;
 
@@ -85,103 +79,6 @@ export const resolveStoreRow = async (user: User): Promise<User | null> => {
 };
 
 /**
- * Just-in-time store provisioning via Shopify's Token Exchange (RFC 8693).
- *
- * Historically the ONLY thing that ever created a `users` row was the classic
- * OAuth authorization-code-grant callback (/shopify/callback) — the comment on
- * getOnboardingStatusController used to assume "no owner row" could never
- * happen post-install specifically because of that. That assumption breaks
- * for shops Shopify loads via its newer embedded-loading flow (recognizable
- * by an `id_token` query param on the very first load): those requests carry
- * a validly-signed session token but never touch our classic OAuth redirect
- * at all, so no row — and therefore no stored access token — exists for them.
- *
- * The session token itself already proves (cryptographic signature, checked
- * by the caller via decodeSessionToken) that this is a legitimate request
- * from this exact shop's Shopify Admin — exactly as trustworthy as completing
- * classic OAuth. tokenExchange() redeems it for a real offline access token
- * server-to-server, no merchant-facing redirect required, mirroring what
- * /shopify/callback does after the authorize screen today.
- *
- * Race-safe: concurrent first-load requests for the same brand-new shop can
- * both reach this function; onConflictDoNothing targets the partial unique
- * index on (shopify_url) WHERE store_owner_id IS NULL (see schema.ts), so
- * only one insert wins — the loser re-queries and returns the winner's row
- * instead of erroring or creating a duplicate owner.
- */
-const provisionStoreViaTokenExchange = async (
-  shopDomain: string,
-  sessionToken: string
-): Promise<User | null> => {
-  try {
-    const { session } = await shopify.auth.tokenExchange({
-      shop: shopDomain,
-      sessionToken,
-      requestedTokenType: RequestedTokenType.OfflineAccessToken,
-      expiring: true,
-    });
-
-    const accessToken = session.accessToken;
-    if (!accessToken) return null;
-
-    const shopUrl = `https://${shopDomain}`;
-    const encryptedToken = encrypt(accessToken);
-
-    const inserted = await database
-      .insert(users)
-      .values({
-        id: createId(),
-        name: shopDomain,
-        email: `${shopDomain.replace(".myshopify.com", "")}@shopify.placeholder`,
-        emailVerified: false,
-        role: "owner",
-        shopify_url: shopUrl,
-        shopify_access_token: encryptedToken,
-        shopify_token_expires_at: session.expires ?? null,
-        shopify_api_key: env.SHOPIFY_API_KEY,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .onConflictDoNothing({
-        target: users.shopify_url,
-        where: sql`${users.storeOwnerId} IS NULL`,
-      })
-      .returning();
-
-    if (inserted.length === 0) {
-      // Lost the race — another concurrent request already provisioned this
-      // shop between our lookup and our insert. Use its row instead.
-      return await findUserByShopDomain(shopDomain);
-    }
-
-    logger.info(`[TokenExchange] Provisioned new store via token exchange: ${shopDomain}`);
-
-    // Same as /shopify/callback — non-fatal if it fails, don't block auth on it.
-    try {
-      const webhookSummary = await registerRequiredWebhooks(shopUrl, accessToken);
-      if (!webhookSummary.allRegistered) {
-        const missingTopics = webhookSummary.verification
-          .filter((item) => !item.registered)
-          .map((item) => item.key);
-        logger.warn(
-          `[TokenExchange] Webhook verification incomplete for ${shopDomain}. Missing: ${missingTopics.join(", ")}`
-        );
-      }
-    } catch (whErr: any) {
-      const detail = whErr?.response
-        ? `status=${whErr.response.status} data=${JSON.stringify(whErr.response.data)}`
-        : whErr?.message || String(whErr);
-      logger.error(`[TokenExchange] Webhook registration failed for ${shopDomain}: ${detail}`);
-    }
-
-    return inserted[0];
-  } catch (err: any) {
-    logger.error(`[TokenExchange] Failed to provision ${shopDomain}: ${err?.message || String(err)}`);
-    return null;
-  }
-};
-
-/**
  * Resolves the store/user from a Shopify App Bridge session token (a short-lived JWT
  * sent by the embedded frontend). Embedded apps cannot rely on third-party cookies
  * inside the Admin iframe, so this is the primary auth path for merchants.
@@ -199,10 +96,7 @@ const findUserBySessionToken = async (token: string): Promise<User | null> => {
       return null;
     }
 
-    const existing = await findUserByShopDomain(shopDomain);
-    if (existing) return existing;
-
-    return await provisionStoreViaTokenExchange(shopDomain, token);
+    return await findUserByShopDomain(shopDomain);
   } catch {
     // Not a valid Shopify session token (expired, tampered, or a different bearer
     // scheme). Fall through to the other auth strategies.
