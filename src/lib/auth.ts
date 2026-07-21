@@ -528,15 +528,10 @@ export const auth = betterAuth({
         required: false,
         fieldName: "shopify_api_key",
         returned: true,
-        // Deliberately no encrypt/decrypt transform — unlike
-        // shopify_access_token, this is our own public app Client ID
-        // (env.SHOPIFY_API_KEY), stored as plaintext everywhere it's
-        // written (shopify.route.ts, auth.middleware.ts) and looked up by
-        // exact-match in findUserByApiKey, which requires it to stay
-        // plaintext. The encrypt/decrypt pair here was a copy-paste
-        // artifact from the field below — decrypting an already-plaintext
-        // value threw "Malformed UTF-8 data" on every session lookup
-        // (caught and logged, not fatal, but noisy on every request).
+        transform: {
+          input: (val: any) => (typeof val === "string" ? encrypt(val) : val),
+          output: (val: any) => (typeof val === "string" ? decrypt(val) : val),
+        },
       },
       shopify_access_token: {
         type: "string",
