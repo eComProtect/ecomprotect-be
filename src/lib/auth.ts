@@ -566,23 +566,6 @@ export const auth = betterAuth({
         fieldName: "storeOwnerId",
         returned: true,
       },
-      // Missing here meant better-auth's own session.user object (returned
-      // via getSession — the x-staff-token path in resolveRequestUser, and
-      // the plain cookie-session fallback) never carried onboardingStatus at
-      // all, unlike the raw Drizzle row findUserByShopDomain/
-      // findUserBySessionToken return for the App Bridge Bearer-token path.
-      // resolveStoreRow's storeOwnerId-null short-circuit then returned that
-      // incomplete object as-is, so requireActiveOnboarding read
-      // store.onboardingStatus as undefined and 403'd with
-      // onboardingStatus:null on every request — even for the real, active
-      // owner — the instant a session ever got resolved via getSession
-      // instead of the Bearer path (i.e. right after any manual /signin).
-      onboardingStatus: {
-        type: "string",
-        required: false,
-        fieldName: "onboardingStatus",
-        returned: true,
-      },
     },
     changeEmail: {
       enabled: true,
