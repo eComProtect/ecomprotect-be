@@ -528,10 +528,14 @@ export const auth = betterAuth({
         required: false,
         fieldName: "shopify_api_key",
         returned: true,
-        transform: {
-          input: (val: any) => (typeof val === "string" ? encrypt(val) : val),
-          output: (val: any) => (typeof val === "string" ? decrypt(val) : val),
-        },
+        // Deliberately no encrypt/decrypt transform — unlike
+        // shopify_access_token, this is our own public app Client ID
+        // (env.SHOPIFY_API_KEY), stored as plaintext everywhere it's
+        // written (shopify.route.ts, auth.middleware.ts) and looked up by
+        // exact-match in findUserByApiKey, which requires it to stay
+        // plaintext. The encrypt/decrypt pair here was a copy-paste
+        // artifact from the field below — decrypting an already-plaintext
+        // value threw "Malformed UTF-8 data" on every session lookup.
       },
       shopify_access_token: {
         type: "string",
@@ -576,6 +580,23 @@ export const auth = betterAuth({
         type: "string",
         required: false,
         fieldName: "onboardingStatus",
+        returned: true,
+      },
+      // Same class of bug as onboardingStatus above: when a request resolves
+      // via getSession (the x-staff-token path, or the plain cookie fallback
+      // right after any manual /signin), resolveStoreRow returns better-auth's
+      // session.user object as-is for an owner (storeOwnerId null). Without
+      // this field declared, shopify_token_expires_at was undefined on that
+      // object, so resolveStoreShopifyAccess saw isShopifyTokenExpired(undefined)
+      // === true and fired attemptTokenMigration on a perfectly valid modern
+      // expiring token — which Shopify rejects with a 400 — 401ing every
+      // /customer, /order etc. call and forcing an endless re-auth/reinstall
+      // loop ("could not load"). Declaring it means the session object carries
+      // the real expiry and expiry checks operate on the true value.
+      shopify_token_expires_at: {
+        type: "date",
+        required: false,
+        fieldName: "shopify_token_expires_at",
         returned: true,
       },
     },
