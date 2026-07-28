@@ -186,10 +186,23 @@ shopifyRouter.get("/callback", async (req: Request, res: Response): Promise<void
       logger.error(`[OAuth] Webhook registration failed for ${shopDomain}: ${detail}`);
     }
 
+    const host = (req.query.host as string | undefined) ?? "";
+
+    // No host means OAuth wasn't started from inside the Admin iframe — e.g. a
+    // merchant reconnecting an expired token from the standalone website. The
+    // embedded redirect below would then land on FRONTEND_DOMAIN?shop=…&host=,
+    // which EmbeddedEntry reads as not-embedded and answers with the marketing
+    // homepage — so a website user reconnecting got bounced out of the app.
+    // Send them back to their dashboard instead.
+    if (!host) {
+      logger.info(`[OAuth] Completed without host (standalone) for ${shopDomain}`);
+      res.redirect(`${env.FRONTEND_DOMAIN}/user/customer-management`);
+      return;
+    }
+
     // Redirect back into the embedded app. We pass shop + host so App Bridge can
     // boot inside the Shopify Admin iframe; the frontend then authenticates every
     // request with a short-lived App Bridge session token (no token in the URL).
-    const host = (req.query.host as string | undefined) ?? "";
     const params = new URLSearchParams({ shop: shopDomain, host });
     res.redirect(`${env.FRONTEND_DOMAIN}?${params.toString()}`);
   } catch (err: any) {
