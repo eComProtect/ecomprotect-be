@@ -66,6 +66,15 @@ export const users = pgTable("users", {
   package: text("package"),
   shopify_api_key: text("shopify_api_key"),
   shopify_access_token: text("shopify_access_token"),
+  // Set only for stores connected with merchant-supplied credentials from an
+  // admin-created custom app (see connectcredentials.controller.ts), where
+  // shopify_api_key holds that app's Client ID. Encrypted at rest, and kept
+  // rather than discarded after the first exchange because the
+  // client_credentials grant is the refresh path for these stores — they never
+  // go through OAuth, so re-running the grant is the only way to renew.
+  // Deliberately NOT a better-auth additionalField: those are returned: true
+  // and would ship the secret to the browser in every get-session response.
+  shopify_client_secret: text("shopify_client_secret"),
   shopify_url: text("shopify_url"),
   shopify_token_expires_at: timestamp("shopify_token_expires_at"),
   totalSearches: integer("total_searches").default(0),
