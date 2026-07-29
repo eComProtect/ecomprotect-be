@@ -25,8 +25,24 @@ export interface BillingPlan {
   features: string[];
   /** Per-order-tier monthly amount; `default` covers "5000+"/unknown (kept as-is). */
   prices: Record<OrderTier | "default", number>;
+  /**
+   * Stripe Price IDs for the same matrix — the website's payment path. Kept
+   * beside the amounts so the two can't disagree, and resolved server-side so
+   * the browser never chooses which price it is charged (it previously sent a
+   * priceId of its own choosing straight into checkout.sessions.create).
+   */
+  stripePrices: Record<OrderTier | "default", string>;
   available: boolean;
 }
+
+/**
+ * Price IDs differ per Stripe mode (the defaults below are test-mode IDs), so
+ * each is overridable by env var — going live means setting these, not editing
+ * code. Read via process.env rather than env.util so they stay optional, same
+ * as SHOPIFY_BILLING_TEST below.
+ */
+const priceId = (envKey: string, fallback: string): string =>
+  process.env[envKey]?.trim() || fallback;
 
 export const BILLING_PLANS: BillingPlan[] = [
   {
@@ -38,6 +54,24 @@ export const BILLING_PLANS: BillingPlan[] = [
       "Email support",
     ],
     prices: { "0-300": 399, "301-2,000": 799, "2,001-5,000": 1499, default: 399 },
+    stripePrices: {
+      "0-300": priceId(
+        "STRIPE_PRICE_INSIGHT_0_300",
+        "price_1TybvOGyMcbTbaq2bziNRi0J"
+      ),
+      "301-2,000": priceId(
+        "STRIPE_PRICE_INSIGHT_301_2000",
+        "price_1TybwCGyMcbTbaq2P9Mjbkam"
+      ),
+      "2,001-5,000": priceId(
+        "STRIPE_PRICE_INSIGHT_2001_5000",
+        "price_1SCiSQHCrwRt7F86SYBzh0v0"
+      ),
+      default: priceId(
+        "STRIPE_PRICE_INSIGHT_DEFAULT",
+        "price_1SCiNzHCrwRt7F86dQ21B142"
+      ),
+    },
     available: true,
   },
   {
@@ -49,6 +83,24 @@ export const BILLING_PLANS: BillingPlan[] = [
       "Priority email support",
     ],
     prices: { "0-300": 299, "301-2,000": 699, "2,001-5,000": 1249, default: 399 },
+    stripePrices: {
+      "0-300": priceId(
+        "STRIPE_PRICE_VISION_0_300",
+        "price_1SCiKeHCrwRt7F86pRVFlUE5"
+      ),
+      "301-2,000": priceId(
+        "STRIPE_PRICE_VISION_301_2000",
+        "price_1SCiQTHCrwRt7F86iFHMRxNu"
+      ),
+      "2,001-5,000": priceId(
+        "STRIPE_PRICE_VISION_2001_5000",
+        "price_1SCiS3HCrwRt7F86OlCRIROT"
+      ),
+      default: priceId(
+        "STRIPE_PRICE_VISION_DEFAULT",
+        "price_1SCiKeHCrwRt7F86pRVFlUE5"
+      ),
+    },
     available: true,
   },
   {
@@ -60,6 +112,24 @@ export const BILLING_PLANS: BillingPlan[] = [
       "Dedicated account manager",
     ],
     prices: { "0-300": 499, "301-2,000": 899, "2,001-5,000": 1749, default: 499 },
+    stripePrices: {
+      "0-300": priceId(
+        "STRIPE_PRICE_SHIELD_0_300",
+        "price_1SCiPTHCrwRt7F869QlJmX3W"
+      ),
+      "301-2,000": priceId(
+        "STRIPE_PRICE_SHIELD_301_2000",
+        "price_1SCiRUHCrwRt7F86k3IbSlHW"
+      ),
+      "2,001-5,000": priceId(
+        "STRIPE_PRICE_SHIELD_2001_5000",
+        "price_1SCiSnHCrwRt7F86OUxeWrZ3"
+      ),
+      default: priceId(
+        "STRIPE_PRICE_SHIELD_DEFAULT",
+        "price_1SCiPTHCrwRt7F869QlJmX3W"
+      ),
+    },
     available: false,
   },
 ];
@@ -77,6 +147,28 @@ export function resolvePlanAmount(
     tier in plan.prices ? plan.prices[tier] : plan.prices.default;
 
   return { plan, amount };
+}
+
+/**
+ * Resolves the Stripe Price ID for a package + the merchant's order range.
+ * Returns null for an unknown or unpurchasable package, so a caller can reject
+ * the request rather than opening checkout for something that isn't on sale.
+ */
+export function resolveStripePriceId(
+  planName: string,
+  ordersPerMonth: string | null | undefined
+): { plan: BillingPlan; stripePriceId: string; amount: number } | null {
+  const plan = BILLING_PLANS.find((p) => p.name === planName);
+  if (!plan || !plan.available) return null;
+
+  const tier = ordersPerMonth as OrderTier;
+  const inMatrix = tier in plan.prices;
+
+  return {
+    plan,
+    stripePriceId: inMatrix ? plan.stripePrices[tier] : plan.stripePrices.default,
+    amount: inMatrix ? plan.prices[tier] : plan.prices.default,
+  };
 }
 
 /** Plans annotated with the resolved price for a specific merchant (for the UI). */

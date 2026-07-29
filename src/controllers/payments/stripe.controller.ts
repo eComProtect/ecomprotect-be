@@ -5,9 +5,16 @@ import { Request } from "express";
 import status from "http-status";
 import Stripe from "stripe";
 import { resolveStoreRow } from "@/middlewares/auth.middleware";
+import { resolveStripePriceId } from "@/utils/billing.util";
 
 /**
- * POST /api/payment/create-stripe { priceId } — start Stripe Checkout.
+ * POST /api/payment/create-stripe { package, orders? } — start Stripe Checkout.
+ *
+ * Takes a package name, not a Price ID: the ID is resolved from BILLING_PLANS
+ * (billing.util.ts), the same matrix Shopify billing prices from. Previously the
+ * browser picked the priceId itself from a hardcoded list, which both duplicated
+ * the pricing matrix and let a crafted request subscribe at any price in the
+ * Stripe account.
  *
  * The session carries the store's id in client_reference_id (and metadata), so
  * the webhook (stripe.webhook.ts) can attribute the payment back to a store and
@@ -21,10 +28,10 @@ import { resolveStoreRow } from "@/middlewares/auth.middleware";
  */
 export const StripePayment = async (req: Request, res: Response) => {
   try {
-    const { priceId } = req.body;
+    const { package: planName, orders } = req.body ?? {};
 
-    if (!priceId) {
-      res.status(status.BAD_REQUEST).json({ message: "No id provided" });
+    if (!planName) {
+      res.status(status.BAD_REQUEST).json({ message: "package is required." });
       return;
     }
 
@@ -44,6 +51,22 @@ export const StripePayment = async (req: Request, res: Response) => {
       return;
     }
 
+    // Prefer the tier the merchant just picked, else the one stored at signup —
+    // same precedence as the Shopify path in billing.controller.ts.
+    const ordersTier: string | undefined =
+      orders || store.average_orders_per_month || undefined;
+
+    const resolved = resolveStripePriceId(planName, ordersTier);
+
+    if (!resolved) {
+      res
+        .status(status.BAD_REQUEST)
+        .json({ message: `${planName} is not available for purchase.` });
+      return;
+    }
+
+    const { stripePriceId, amount } = resolved;
+
     const stripe = new Stripe(env.STRIPE_SECRET_KEY);
 
     const session = await stripe.checkout.sessions.create({
@@ -51,7 +74,7 @@ export const StripePayment = async (req: Request, res: Response) => {
       payment_method_types: ["card"],
       line_items: [
         {
-          price: priceId,
+          price: stripePriceId,
           quantity: 1,
         },
       ],
@@ -60,14 +83,15 @@ export const StripePayment = async (req: Request, res: Response) => {
       metadata: {
         storeId: store.id,
         startedByUserId: req.user.id,
-        priceId,
+        package: planName,
+        ordersTier: ordersTier ?? "",
       },
       // Carried onto the subscription itself so subscription.* events (renewal,
       // cancellation) are attributable too, not just the initial checkout.
       subscription_data: {
         metadata: {
           storeId: store.id,
-          priceId,
+          package: planName,
         },
       },
       success_url: `${env.FRONTEND_DOMAIN}/under-review?session_id={CHECKOUT_SESSION_ID}`,
@@ -75,7 +99,7 @@ export const StripePayment = async (req: Request, res: Response) => {
     });
 
     logger.info(
-      `[Stripe] Checkout session ${session.id} created for store ${store.id} (price ${priceId})`
+      `[Stripe] Checkout session ${session.id} created for store ${store.id}: ${planName} @ ${amount} GBP (${stripePriceId}, tier ${ordersTier ?? "unknown"})`
     );
 
     res.status(status.OK).json({ url: session.url });
