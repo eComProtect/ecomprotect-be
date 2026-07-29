@@ -80,8 +80,15 @@ export const connectShopifyCredentialsController = async (
 
   // The store URL is normally already on the row (set at signup); accept an
   // explicit one so a store that never went through OAuth can supply it here.
+  const submittedShopUrl = asTrimmedString(body.shopUrl);
+
+  // Bare domain, used ONLY for validation and for building the Shopify request
+  // URL (which can't contain a protocol). Never written back to the row:
+  // shopify_url is stored as the merchant typed it — signup requires a full
+  // "https://…" URL — and rewriting it to a bare domain would change the format
+  // other lookups and the owner-unique index match on.
   const shopDomain = normalizeShopDomain(
-    asTrimmedString(body.shopUrl) || store.shopify_url || ""
+    submittedShopUrl || store.shopify_url || ""
   );
 
   if (!isValidShopDomain(shopDomain)) {
@@ -102,7 +109,11 @@ export const connectShopifyCredentialsController = async (
     await database
       .update(users)
       .set({
-        shopify_url: shopDomain,
+        // Left untouched when the row already has one. Only filled in for a
+        // store that has none yet, and then verbatim as the merchant entered it.
+        ...(store.shopify_url || !submittedShopUrl
+          ? {}
+          : { shopify_url: submittedShopUrl }),
         shopify_api_key: clientId,
         shopify_client_secret: encrypt(clientSecret),
         shopify_access_token: encrypt(accessToken),
@@ -144,7 +155,7 @@ export const connectShopifyCredentialsController = async (
 
     res.status(status.OK).json({
       connected: true,
-      shopUrl: shopDomain,
+      shopUrl: store.shopify_url || submittedShopUrl,
       scope,
       expiresAt,
       webhooksRegistered,
