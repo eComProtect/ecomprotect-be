@@ -55,6 +55,13 @@ export const users = pgTable("users", {
   ),
   onboardingStatus: text("onboarding_status").default("installed"),
   billingStatus: text("billing_status"),
+  // Stripe subscription taken on the website (the pre-App-Store-approval
+  // payment path — Shopify's Billing API is only available to App Store apps,
+  // so custom-app stores can't be charged through Shopify). Stored so the
+  // Stripe webhook can map subscription lifecycle events back to this store;
+  // without them a cancellation can't be attributed to anyone.
+  stripe_customer_id: text("stripe_customer_id"),
+  stripe_subscription_id: text("stripe_subscription_id"),
   banned: boolean("banned").default(false),
   banReason: text("ban_reason"),
   banExpires: timestamp("ban_expires"),
