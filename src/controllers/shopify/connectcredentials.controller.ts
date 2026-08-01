@@ -11,7 +11,6 @@ import {
   normalizeShopDomain,
 } from "@/service/shopifycredentials.service";
 import { resolveStoreRow } from "@/middlewares/auth.middleware";
-import { registerRequiredWebhooks } from "@/utils/webhook.util";
 import { SHOPIFY_CUSTOM_APP_SCOPES } from "@/configs/shopify.config";
 import { logActivity } from "@/service/logactivity.service";
 import { logger } from "@/utils/logger.util";
@@ -122,35 +121,11 @@ export const connectShopifyCredentialsController = async (
       })
       .where(eq(users.id, store.id));
 
-    // Same follow-up the OAuth callback does — without it no order/refund
-    // events ever reach us for this store. Non-fatal: the connection itself
-    // is already established and usable.
-    let webhooksRegistered = false;
-    try {
-      const summary = await registerRequiredWebhooks(
-        `https://${shopDomain}`,
-        accessToken
-      );
-      webhooksRegistered = summary.allRegistered;
-      if (!summary.allRegistered) {
-        const missing = summary.verification
-          .filter((item) => !item.registered)
-          .map((item) => item.key);
-        logger.warn(
-          `[ClientCredentials] Webhook verification incomplete for ${shopDomain}. Missing: ${missing.join(", ")}`
-        );
-      }
-    } catch (whErr: any) {
-      logger.error(
-        `[ClientCredentials] Webhook registration failed for ${shopDomain}: ${whErr?.message}`
-      );
-    }
-
     await logActivity({
       action: "STORE_CREDENTIALS_CONNECTED",
       for: "store",
       storeId: store.id,
-      meta: { shopDomain, scope, webhooksRegistered },
+      meta: { shopDomain, scope },
     });
 
     res.status(status.OK).json({
@@ -158,7 +133,6 @@ export const connectShopifyCredentialsController = async (
       shopUrl: store.shopify_url || submittedShopUrl,
       scope,
       expiresAt,
-      webhooksRegistered,
     });
   } catch (err: any) {
     if (err instanceof ShopifyCredentialsError) {

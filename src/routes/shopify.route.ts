@@ -4,7 +4,6 @@ import { database } from "@/configs/connection.config";
 import { users } from "@/schema/schema";
 import { or, eq } from "drizzle-orm";
 import { encrypt } from "@/service/encryption.service";
-import { registerRequiredWebhooks } from "@/utils/webhook.util";
 import { env } from "@/utils/env.util";
 import { logger } from "@/utils/logger.util";
 import { createId } from "@paralleldrive/cuid2";
@@ -163,29 +162,9 @@ shopifyRouter.get("/callback", async (req: Request, res: Response): Promise<void
       });
     }
 
-    // Register operational, compliance, and uninstall webhooks
-    const shopUrl = `https://${shopDomain}`;
-    try {
-      const webhookSummary = await registerRequiredWebhooks(shopUrl, accessToken);
-      if (webhookSummary.allRegistered) {
-        logger.info(`[OAuth] All required webhooks registered for ${shopDomain}`);
-      } else {
-        const missingTopics = webhookSummary.verification
-          .filter((item) => !item.registered)
-          .map((item) => item.key);
-        logger.warn(
-          `[OAuth] Webhook verification incomplete for ${shopDomain}. Missing: ${missingTopics.join(", ")}`
-        );
-      }
-    } catch (whErr: any) {
-      // Non-fatal — log but do not block the OAuth flow. Surface the real cause:
-      // for axios errors the useful detail is in response.status / response.data.
-      const detail = whErr?.response
-        ? `status=${whErr.response.status} data=${JSON.stringify(whErr.response.data)}`
-        : whErr?.message || String(whErr);
-      logger.error(`[OAuth] Webhook registration failed for ${shopDomain}: ${detail}`);
-    }
-
+    // Operational, compliance, and uninstall webhooks are declared statically
+    // in shopify.app.toml and auto-subscribed by Shopify on install — no
+    // per-shop registration call needed here.
     const host = (req.query.host as string | undefined) ?? "";
 
     // No host means OAuth wasn't started from inside the Admin iframe — e.g. a

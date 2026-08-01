@@ -1,0 +1,46 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "d8b667c611440b343dde3b4bf98d0fcb"
+application_url = "https://ecomprotect.co.uk"
+embedded = true
+name = "eComProtect"
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "read_assigned_fulfillment_orders,write_assigned_fulfillment_orders,write_checkouts,read_checkouts,read_companies,write_companies,read_customers,write_customers,write_draft_orders,read_draft_orders,read_fulfillments,write_fulfillments,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders,read_orders,write_orders,read_products,write_products,write_reports,read_reports,read_returns,read_third_party_fulfillment_orders,write_third_party_fulfillment_orders,customer_read_companies,customer_write_companies,customer_write_customers,customer_read_customers,customer_read_draft_orders,customer_read_orders,customer_write_orders"
+optional_scopes = [ ]
+use_legacy_install_flow = false
+
+[auth]
+redirect_urls = [ "https://be.ecomprotect.co.uk/shopify/callback" ]
+
+[webhooks]
+api_version = "2026-04"
+
+[[webhooks.subscriptions]]
+compliance_topics = [ "customers/data_request" ]
+uri = "https://be.ecomprotect.co.uk/api/webhook/customers/data-request"
+
+[[webhooks.subscriptions]]
+compliance_topics = [ "customers/redact" ]
+uri = "https://be.ecomprotect.co.uk/api/webhook/customers/redact"
+
+[[webhooks.subscriptions]]
+compliance_topics = [ "shop/redact" ]
+uri = "https://be.ecomprotect.co.uk/api/webhook/shop/redact"
+
+[[webhooks.subscriptions]]
+topics = [ "orders/create" ]
+uri = "https://be.ecomprotect.co.uk/api/webhook/orders/create"
+
+[[webhooks.subscriptions]]
+topics = [ "refunds/create" ]
+uri = "https://be.ecomprotect.co.uk/api/webhook/refunds/create"
+
+[[webhooks.subscriptions]]
+topics = [ "app/uninstalled" ]
+uri = "https://be.ecomprotect.co.uk/api/webhook/app/uninstalled"
+
+[[webhooks.subscriptions]]
+topics = [ "app_subscriptions/update" ]
+uri = "https://be.ecomprotect.co.uk/api/webhook/app/subscriptions-update"

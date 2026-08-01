@@ -3,7 +3,6 @@ import { database } from "@/configs/connection.config";
 import { users, verification } from "@/schema/schema";
 import { decrypt, encrypt } from "@/service/encryption.service";
 import { logger } from "@/utils/logger.util";
-import { registerRequiredWebhooks } from "@/utils/webhook.util";
 import { eq } from "drizzle-orm";
 import { Request, Response } from "express";
 import formidable from "formidable";
@@ -271,23 +270,8 @@ export const updateStoreCredentialsController = async (
       .set(updateData)
       .where(eq(users.id, userId));
 
-    // Re-register webhooks with the new access token
-    if (shopify_access_token) {
-        const storeUrl = store.shopify_url?.startsWith("http") ? store.shopify_url : `https://${store.shopify_url}`;
-        if (storeUrl) {
-            try {
-                console.log(`\ud83d\udd04 Re-registering webhooks for ${storeUrl}...`);
-                await registerRequiredWebhooks(storeUrl, shopify_access_token);
-                console.log(`\u2705 Webhooks re-registered successfully for ${storeUrl}`);
-            } catch (err: any) {
-                console.error(`\u274c Failed to re-register webhooks for ${storeUrl}:`, err.message);
-                // We'll still return success for the credential update, but warn in logs.
-            }
-        }
-    }
-
     res.status(status.OK).json({
-      message: "Store credentials updated and webhooks registered successfully",
+      message: "Store credentials updated successfully",
     });
   } catch (error) {
     logger.error("Error in updateStoreCredentialsController:", error);

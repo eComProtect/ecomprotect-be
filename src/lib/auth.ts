@@ -12,9 +12,6 @@ import {
   storeInvitationAcceptedTemplate,
 } from "@/utils/sendgrid.util";
 import { and, eq, ne, sql } from "drizzle-orm";
-import {
-  registerRequiredWebhooks,
-} from "@/utils/webhook.util";
 import { ac, manager, support, admin, superadmin, owner } from "./permission";
 import { decrypt, encrypt } from "@/service/encryption.service";
 import { users } from "@/schema/schema";
@@ -419,17 +416,6 @@ export const auth = betterAuth({
           console.error("❌ Failed to finalize signup:", err);
         }
 
-        const shopUrl = newUser.shopify_url;
-        const accessToken = newUser.shopify_access_token;
-
-        if (shopUrl && accessToken) {
-          try {
-            await registerRequiredWebhooks(shopUrl, accessToken);
-            console.log("Webhook registered after signup for shop:", shopUrl);
-          } catch (err) {
-            console.error("Failed registering webhook after signup:", err);
-          }
-        }
       }
 
       // Staff creation (Create Staff page → authClient.admin.createUser) goes

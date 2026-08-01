@@ -7,7 +7,6 @@ import { database } from "@/configs/connection.config";
 import { eq, or, and, isNull, sql } from "drizzle-orm";
 import status from "http-status";
 import { encrypt } from "@/service/encryption.service";
-import { registerRequiredWebhooks } from "@/utils/webhook.util";
 import { env } from "@/utils/env.util";
 import { logger } from "@/utils/logger.util";
 import { createId } from "@paralleldrive/cuid2";
@@ -155,24 +154,6 @@ const provisionStoreViaTokenExchange = async (
     }
 
     logger.info(`[TokenExchange] Provisioned new store via token exchange: ${shopDomain}`);
-
-    // Same as /shopify/callback — non-fatal if it fails, don't block auth on it.
-    try {
-      const webhookSummary = await registerRequiredWebhooks(shopUrl, accessToken);
-      if (!webhookSummary.allRegistered) {
-        const missingTopics = webhookSummary.verification
-          .filter((item) => !item.registered)
-          .map((item) => item.key);
-        logger.warn(
-          `[TokenExchange] Webhook verification incomplete for ${shopDomain}. Missing: ${missingTopics.join(", ")}`
-        );
-      }
-    } catch (whErr: any) {
-      const detail = whErr?.response
-        ? `status=${whErr.response.status} data=${JSON.stringify(whErr.response.data)}`
-        : whErr?.message || String(whErr);
-      logger.error(`[TokenExchange] Webhook registration failed for ${shopDomain}: ${detail}`);
-    }
 
     return inserted[0];
   } catch (err: any) {
