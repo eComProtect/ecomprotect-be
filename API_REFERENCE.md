@@ -96,14 +96,11 @@ Merchant-specific configuration for risk detection.
 
 ---
 
-## Payment API (`/api/payment`)
+## Billing
 
-Subscription and billing management.
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/create` | POST | Initialize a subscription flow. |
-| `/create-stripe` | POST | Generate a Stripe checkout session for plans. |
+Subscription and billing are handled exclusively through the Shopify Billing API
+(`/api/billing`) once a merchant installs the app on their store — there is no
+separate payment endpoint.
 
 ---
 

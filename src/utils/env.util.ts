@@ -26,20 +26,10 @@ const schemaObject = z.object({
   JWT_SECRET: z.string(),
   
   DATABASE_NAME: z.string(),
-  
-  GC_ACCESS_TOKEN: z.string(),
-  GC_WEBHOOK_SECRET: z.string(),
-  GC_ENV: z.enum(["sandbox", "live"]),
-  
+
   ADMIN_EMAIL: z.string(),
   
   ENCRYPTION_KEY: z.string(),
-  
-  STRIPE_SECRET_KEY: z.string(),
-  // Signing secret for POST /api/webhook/stripe (Stripe dashboard → Webhooks).
-  // Optional so existing deployments don't fail to boot before it's set; the
-  // webhook itself refuses to process anything while it's missing.
-  STRIPE_WEBHOOK_SECRET: z.string().optional(),
 
   SHOPIFY_API_KEY: z.string(),
   SHOPIFY_API_SECRET: z.string(),

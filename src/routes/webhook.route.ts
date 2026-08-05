@@ -10,7 +10,6 @@ import {
 } from "@/webhooks/gdpr.webhook";
 import { handleAppUninstalled } from "@/webhooks/uninstall.webhook";
 import { handleAppSubscriptionUpdate } from "@/webhooks/subscription.webhook";
-import { stripeWebhook } from "@/webhooks/stripe.webhook";
 
 const webhookRouter = Router();
 
@@ -54,19 +53,6 @@ webhookRouter.post(
   "/app/subscriptions-update",
   ...webhookMiddleware,
   handleAppSubscriptionUpdate
-);
-
-// ---------------------------------------------------------------------------
-// Stripe — website subscription payments
-// ---------------------------------------------------------------------------
-// Raw body like the others (Stripe signs the exact bytes), but deliberately NOT
-// behind verifyWebhookHmac: that middleware validates Shopify's
-// X-Shopify-Hmac-Sha256 and would reject every Stripe delivery. Stripe's own
-// signature check happens inside the handler.
-webhookRouter.post(
-  "/stripe",
-  express.raw({ type: "application/json" }),
-  stripeWebhook
 );
 
 export default webhookRouter;

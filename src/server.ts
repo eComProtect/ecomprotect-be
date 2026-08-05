@@ -17,7 +17,6 @@ import { config } from "dotenv";
 import express from "express";
 import morgan from "morgan";
 import helmet from "helmet";
-import paymentRouter from "./routes/payment.route";
 import userRouter from "./routes/user.route";
 import settingsRouter from "./routes/settings.route";
 import webhookRouter from "./routes/webhook.route";
@@ -96,7 +95,6 @@ app.use(throttle("default"));
 // against and every webhook's HMAC check failing.
 app.use("/api/webhook", webhookRouter);
 app.use(express.json());
-app.use("/api/payment", paymentRouter);
 app.use("/api/user", userRouter);
 app.use("/api/order", orderRouter);
 app.use("/api/customer", customerRouter);
