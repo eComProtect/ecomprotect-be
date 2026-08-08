@@ -26,7 +26,6 @@ import notificationRouter from "./routes/notification.route";
 import reportsRouter from "./routes/reports.route";
 import activityRouter from "./routes/activity.route";
 import shopifyRouter from "./routes/shopify.route";
-import shopifyCredentialsRouter from "./routes/shopifycredentials.route";
 import billingRouter from "./routes/billing.route";
 import onboardingRouter from "./routes/onboarding.route";
 import staffRouter from "./routes/staff.route";
@@ -105,10 +104,7 @@ app.use("/api/activity", activityRouter);
 app.use("/api/billing", billingRouter);
 app.use("/api/onboarding", onboardingRouter);
 app.use("/api/staff", staffRouter);
-// Custom-app credential connection (client_credentials grant). Under /api so
-// the frontend's axios instance reaches it; the OAuth router below stays at the
-// root because its URLs are registered with Shopify.
-app.use("/api/shopify", shopifyCredentialsRouter);
+// The OAuth router stays at the root because its URLs are registered with Shopify.
 app.use("/shopify", shopifyRouter);
 
 app.use(unknownRoutes);

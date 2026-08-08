@@ -15,56 +15,10 @@ import { env } from "@/utils/env.util";
 export const ADMIN_API_VERSION = ApiVersion.July26;
 
 /**
- * Scopes a merchant must enable on the custom app they build in their own dev
- * dashboard before connecting it here via the client_credentials grant (see
- * connectcredentials.controller.ts). Served to the connect-store UI by
- * GET /api/shopify/credentials so the on-screen instructions live in one place.
- *
- * Deliberately separate from SHOPIFY_REQUIRED_SCOPES below, which is what this
- * app itself requests during OAuth. This list is a superset: it contains every
- * OAuth scope plus extras (products, reports, checkouts, companies, draft
- * orders) and the customer_* Customer Account API scopes, which aren't valid in
- * an Admin OAuth scope request at all. Granting more than OAuth asks for is
- * harmless; folding these into the OAuth request would not be.
- */
-export const SHOPIFY_CUSTOM_APP_SCOPES = [
-  "read_assigned_fulfillment_orders",
-  "write_assigned_fulfillment_orders",
-  "write_checkouts",
-  "read_checkouts",
-  "read_companies",
-  "write_companies",
-  "read_customers",
-  "write_customers",
-  "write_draft_orders",
-  "read_draft_orders",
-  "read_fulfillments",
-  "write_fulfillments",
-  "read_merchant_managed_fulfillment_orders",
-  "write_merchant_managed_fulfillment_orders",
-  "read_orders",
-  "write_orders",
-  "read_products",
-  "write_products",
-  "write_reports",
-  "read_reports",
-  "read_returns",
-  "read_third_party_fulfillment_orders",
-  "write_third_party_fulfillment_orders",
-  "customer_read_companies",
-  "customer_write_companies",
-  "customer_write_customers",
-  "customer_read_customers",
-  "customer_read_draft_orders",
-  "customer_read_orders",
-  "customer_write_orders",
-] as const;
-
-/**
  * Admin API scopes this app requests for itself during OAuth
  * (shopify.auth.begin → /shopify/callback). Changing this list changes what
  * merchants are asked to consent to and re-triggers consent for existing
- * installs, so it is kept narrow and separate from the custom-app list above.
+ * installs, so it is kept narrow and deliberate.
  */
 export const SHOPIFY_REQUIRED_SCOPES = [
   "read_customers",

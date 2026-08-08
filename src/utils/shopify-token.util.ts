@@ -6,63 +6,8 @@ import { or, eq } from "drizzle-orm";
 import { encrypt, decrypt } from "@/service/encryption.service";
 import { logger } from "@/utils/logger.util";
 import { resolveStoreRow } from "@/middlewares/auth.middleware";
-import { exchangeClientCredentials } from "@/service/shopifycredentials.service";
 
 type User = typeof users.$inferSelect;
-
-/**
- * True when this store was connected with merchant-supplied custom-app
- * credentials rather than OAuth, and can therefore mint a fresh token on
- * demand instead of needing the merchant to re-authorize.
- */
-export const hasClientCredentials = (store: User): boolean =>
-  Boolean(store.shopify_api_key && store.shopify_client_secret);
-
-/**
- * Re-runs Shopify's client_credentials grant for a store connected via
- * merchant-supplied custom-app credentials, and persists the new token.
- *
- * This is the renewal path OAuth stores don't have: the grant can be replayed
- * with the stored Client ID + secret, so an expired token here is recoverable
- * server-side with no merchant involvement at all.
- *
- * Returns null when the store has no stored credentials or Shopify refuses
- * them (e.g. the merchant deleted or rotated the custom app), leaving callers
- * to fall through to their normal SHOPIFY_TOKEN_EXPIRED handling.
- */
-export async function refreshViaClientCredentials(
-  store: User
-): Promise<{ accessToken: string; expiresAt: Date } | null> {
-  if (!store.shopify_url || !hasClientCredentials(store)) return null;
-
-  try {
-    const { accessToken, expiresAt } = await exchangeClientCredentials({
-      shopDomain: store.shopify_url,
-      clientId: store.shopify_api_key!,
-      clientSecret: decrypt(store.shopify_client_secret!),
-    });
-
-    await database
-      .update(users)
-      .set({
-        shopify_access_token: encrypt(accessToken),
-        shopify_token_expires_at: expiresAt,
-        updatedAt: new Date(),
-      })
-      .where(eq(users.id, store.id));
-
-    logger.info(
-      `[ClientCredentials] Refreshed token for store ${store.id} — expires: ${expiresAt.toISOString()}`
-    );
-
-    return { accessToken, expiresAt };
-  } catch (err: any) {
-    logger.error(
-      `[ClientCredentials] Refresh failed for store ${store.id}: ${err.message}`
-    );
-    return null;
-  }
-}
 
 /**
  * Returns true when the Shopify access token needs to be migrated or refreshed.
@@ -182,29 +127,13 @@ export async function resolveStoreShopifyAccess(
   user: User
 ): Promise<{ store: User; accessToken: string } | null> {
   const store = await resolveStoreRow(user);
-  if (!store || !store.shopify_url) {
+  if (!store || !store.shopify_url || !store.shopify_access_token) {
     return null;
-  }
-
-  // Client-credentials stores can always mint a token from the stored
-  // credentials, so "no token on the row yet" isn't fatal for them the way it
-  // is for an OAuth store (which has nothing to replay).
-  if (!store.shopify_access_token) {
-    const minted = await refreshViaClientCredentials(store);
-    return minted ? { store, accessToken: minted.accessToken } : null;
   }
 
   let accessToken = decrypt(store.shopify_access_token);
 
   if (isShopifyTokenExpired(store.shopify_token_expires_at)) {
-    // Prefer re-running the grant: it renews silently, whereas
-    // attemptTokenMigration is only ever right for a legacy non-expiring
-    // OAuth token and would 400 on a client-credentials one.
-    if (hasClientCredentials(store)) {
-      const refreshed = await refreshViaClientCredentials(store);
-      return refreshed ? { store, accessToken: refreshed.accessToken } : null;
-    }
-
     const migrated = await attemptTokenMigration({
       shopDomain: store.shopify_url,
       encryptedToken: store.shopify_access_token,
