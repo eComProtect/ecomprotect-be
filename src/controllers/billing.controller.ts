@@ -12,6 +12,7 @@ import {
   plansForMerchant,
   resolvePlanAmount,
 } from "@/utils/billing.util";
+import { getOrderQuota } from "@/service/orderquota.service";
 import { resolveStoreRow } from "@/middlewares/auth.middleware";
 import {
   resolveStoreShopifyAccess,
@@ -36,6 +37,38 @@ export const plansController = async (
     message: "Plans fetched successfully",
     data: plansForMerchant(orders),
   });
+};
+
+/** GET /api/billing/quota — this month's order-analysis usage vs. the store's plan cap. */
+export const orderQuotaController = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(status.UNAUTHORIZED).json({ message: "Not authenticated" });
+      return;
+    }
+
+    const store = await resolveStoreRow(req.user);
+    if (!store) {
+      res.status(status.BAD_REQUEST).json({ message: "Store not found." });
+      return;
+    }
+
+    const quota = await getOrderQuota(store.id, store.average_orders_per_month);
+
+    res.status(status.OK).json({
+      count: quota.count,
+      cap: quota.cap,
+      tier: store.average_orders_per_month ?? null,
+    });
+  } catch (error: any) {
+    logger.error(`[Billing] quota error: ${error?.message || error}`);
+    res
+      .status(status.INTERNAL_SERVER_ERROR)
+      .json({ message: "Failed to fetch order quota." });
+  }
 };
 
 /** GET /api/billing/status — whether the store has an active app subscription. */

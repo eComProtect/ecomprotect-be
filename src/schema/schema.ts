@@ -85,6 +85,13 @@ export const users = pgTable("users", {
   shopify_url: text("shopify_url"),
   shopify_token_expires_at: timestamp("shopify_token_expires_at"),
   totalSearches: integer("total_searches").default(0),
+  // Monthly order-analysis usage against the cap implied by the store's
+  // average_orders_per_month tier (see ORDER_TIER_CAPS in billing.util.ts).
+  // ordersAnalyzedMonth is a "YYYY-MM" (UTC) key — orderquota.service.ts
+  // lazily resets the count to 0 whenever it no longer matches the current
+  // month, rather than needing a cron job.
+  ordersAnalyzedCount: integer("orders_analyzed_count").default(0),
+  ordersAnalyzedMonth: text("orders_analyzed_month"),
 }, (table) => [
   // Enforces "one owner row per shop" — but only among owner rows
   // (store_owner_id IS NULL). Staff rows deliberately copy their owner's

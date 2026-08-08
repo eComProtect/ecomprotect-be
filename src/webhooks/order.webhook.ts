@@ -19,6 +19,7 @@ import { emitNewNotification } from "@/service/notificationsocket.service";
 import { holdOrderFulfillment, cancelShopifyOrder } from "@/service/orderaction.service";
 import { generateJwt } from "@/utils/jwt.util";
 import { planHasFeature } from "@/utils/billing.util";
+import { consumeOrderQuota } from "@/service/orderquota.service";
 import type { IO } from "@/types/socket.types";
 
 /**
@@ -70,6 +71,41 @@ const processOrderCreate = async (
     console.log(`[Automation] Resolved store for ${shopDomain}: id=${store.id} email=${store.email} role=${store.role}`);
 
     const storeId = store.id;
+
+    // Monthly order-analysis cap implied by the store's selected order-volume
+    // tier (previously just a pricing input with no enforcement — a store on
+    // "0-300" got full analysis on unlimited real order volume). Checked
+    // before any of the actual analysis work below runs, so an order past
+    // the cap consumes no risk-analysis/API/email work at all.
+    const quota = await consumeOrderQuota(storeId, store.average_orders_per_month);
+    if (!quota.allowed) {
+      console.warn(
+        `[OrderQuota] Order ${order.id} for store ${storeId} skipped — over monthly cap (${quota.count}/${quota.cap}).`
+      );
+
+      // Only the order that actually tips them over the cap triggers this —
+      // every order after it hits the same `!quota.allowed` branch and
+      // returns above, so this can't fire repeatedly for the rest of the month.
+      if (quota.cap !== null && quota.count === quota.cap) {
+        try {
+          const [insertedNotification] = await database
+            .insert(notifications)
+            .values({
+              storeId,
+              type: "ORDER_QUOTA_EXCEEDED",
+              title: "Monthly order limit reached",
+              message: `You've reached your plan's limit of ${quota.cap} analyzed orders this month. New orders won't be screened for risk until next month or until you upgrade.`,
+              meta: { cap: quota.cap, tier: store.average_orders_per_month },
+            } as any)
+            .returning();
+          emitNewNotification(io, storeId, insertedNotification);
+        } catch (e: any) {
+          console.error("Failed to send order-quota notification:", e.message);
+        }
+      }
+      return;
+    }
+
     const storeUrl = store.shopify_url?.startsWith("http") ? store.shopify_url : `https://${store.shopify_url}`;
     let storeAccessToken = store.shopify_access_token ? decrypt(store.shopify_access_token) : null;
 

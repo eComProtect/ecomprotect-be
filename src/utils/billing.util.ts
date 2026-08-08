@@ -19,6 +19,29 @@ const BILLING_INTERVAL = "EVERY_30_DAYS"; // monthly recurring
 
 export type OrderTier = "0-300" | "301-2,000" | "2,001-5,000";
 
+/**
+ * Monthly order-analysis cap implied by the merchant's self-reported order
+ * volume (users.average_orders_per_month) — previously just a pricing input
+ * with no actual enforcement, so a store on the cheapest tier got full
+ * analysis on unlimited real order volume. "5000+" has no cap: it's the
+ * open-ended top/enterprise bucket, not a real ceiling.
+ */
+export const ORDER_TIER_CAPS: Record<OrderTier | "5000+", number | null> = {
+  "0-300": 300,
+  "301-2,000": 2000,
+  "2,001-5,000": 5000,
+  "5000+": null,
+};
+
+/** Null (no cap) for an unset/unrecognized tier — never silently block a
+ *  store that just hasn't picked one yet. */
+export function getOrderCapForTier(
+  tier: string | null | undefined
+): number | null {
+  if (!tier || !(tier in ORDER_TIER_CAPS)) return null;
+  return ORDER_TIER_CAPS[tier as keyof typeof ORDER_TIER_CAPS];
+}
+
 export interface BillingPlan {
   name: string;
   description: string;
