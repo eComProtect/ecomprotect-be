@@ -11,7 +11,7 @@ import {
   staffInvitationTemplate,
   storeInvitationAcceptedTemplate,
 } from "@/utils/sendgrid.util";
-import { and, eq, ne, sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { ac, manager, support, admin, superadmin, owner } from "./permission";
 import { decrypt, encrypt } from "@/service/encryption.service";
 import { users } from "@/schema/schema";
@@ -250,61 +250,6 @@ export const auth = betterAuth({
 
   hooks: {
     before: createAuthMiddleware(async (ctx) => {
-      if (ctx.path === "/sign-up/email") {
-        if (typeof ctx.body.email === "string") {
-          ctx.body.email = normalizeEmail(ctx.body.email).toLowerCase();
-        }
-
-        if (typeof ctx.body.shopify_url === "string") {
-          ctx.body.shopify_url = ctx.body.shopify_url.trim();
-        }
-
-        const existingByEmail = await findUserByEmail(ctx.body.email);
-
-        if (existingByEmail) {
-          throw new APIError("BAD_REQUEST", {
-            message: "Email already registered.",
-          });
-        }
-
-        const shopify_url = ctx.body.shopify_url;
-
-        const existing = await database.query.users.findFirst({
-          where: eq(users.shopify_url, shopify_url),
-        });
-
-        if (existing) {
-          const existingCredentials = await database.query.account.findFirst({
-            where: and(
-              eq(schema.account.userId, existing.id),
-              eq(schema.account.providerId, "credential")
-            ),
-          });
-
-          if (existingCredentials) {
-            // A real owner has already signed up and claimed this shop.
-            throw new APIError("BAD_REQUEST", {
-              message: "Shopify URL already registered.",
-            });
-          }
-
-          // No credentials yet — this is the placeholder row /shopify/callback
-          // created at OAuth-install time. Let sign-up proceed (the after-hook
-          // reconciles it into the newly-created row instead of leaving a
-          // duplicate store around), and prefer its OAuth-obtained Shopify
-          // credentials over whatever the merchant typed into the form, since
-          // the OAuth token is the one actually proven to work.
-          if (existing.shopify_access_token) {
-            ctx.body.shopify_access_token = decrypt(
-              existing.shopify_access_token
-            );
-          }
-          if (existing.shopify_api_key) {
-            ctx.body.shopify_api_key = decrypt(existing.shopify_api_key);
-          }
-        }
-      }
-
       if (ctx.path === "/sign-in/email") {
         const submittedEmail = normalizeEmail(ctx.body.email);
         ctx.body.email = submittedEmail;
@@ -323,101 +268,6 @@ export const auth = betterAuth({
       }
     }),
     after: createAuthMiddleware(async (ctx) => {
-      if (ctx.path === "/sign-up/email") {
-        const newUser = ctx.context.newSession?.user;
-        if (!newUser) {
-          console.log("No new user found");
-          return;
-        }
-
-        const storeId = newUser.id;
-        const shopifyUrl = ctx.body.shopify_url;
-
-        try {
-          // Reconcile with any OAuth-install placeholder row for this shop
-          // (created by /shopify/callback before this signup, caught by the
-          // before-hook above instead of being rejected). Re-point anything
-          // already synced onto it (webhooks can fire between install and
-          // signup) onto the new row, then remove the placeholder so exactly
-          // one row survives per store.
-          if (shopifyUrl) {
-            const placeholder = await database.query.users.findFirst({
-              where: and(
-                eq(users.shopify_url, shopifyUrl),
-                ne(users.id, storeId)
-              ),
-            });
-
-            if (placeholder) {
-              const oldId = placeholder.id;
-
-              await database.transaction(async (tx) => {
-                await tx
-                  .update(schema.customers)
-                  .set({ storeId })
-                  .where(eq(schema.customers.storeId, oldId));
-                await tx
-                  .update(schema.settings)
-                  .set({ storeId })
-                  .where(eq(schema.settings.storeId, oldId));
-                await tx
-                  .update(schema.notifications)
-                  .set({ storeId })
-                  .where(eq(schema.notifications.storeId, oldId));
-                await tx
-                  .update(schema.pushSubscriptions)
-                  .set({ storeId })
-                  .where(eq(schema.pushSubscriptions.storeId, oldId));
-                await tx
-                  .update(schema.activities)
-                  .set({ storeId })
-                  .where(eq(schema.activities.storeId, oldId));
-
-                // shopify_token_expires_at isn't a better-auth additionalField,
-                // so it was never carried onto the new row at insert time.
-                if (placeholder.shopify_token_expires_at) {
-                  await tx
-                    .update(users)
-                    .set({
-                      shopify_token_expires_at:
-                        placeholder.shopify_token_expires_at,
-                    })
-                    .where(eq(users.id, storeId));
-                }
-
-                await tx.delete(users).where(eq(users.id, oldId));
-              });
-            }
-          }
-
-          const existingSettings = await database.query.settings.findFirst({
-            where: eq(schema.settings.storeId, storeId),
-          });
-
-          if (!existingSettings) {
-            await database.insert(schema.settings).values({
-              storeId,
-              lostParcelThreshold: 3,
-              lostParcelPeriod: 1,
-              requireESignature: false,
-              forceCourierSignedDelivery: false,
-              photoOnDelivery: false,
-              sendCancellationEmail: false,
-            });
-          }
-
-          // The first (and, until a real staff-invite flow exists, only) user
-          // created for a store_id becomes its owner.
-          await database
-            .update(users)
-            .set({ role: "owner", onboardingStatus: "signed_up" })
-            .where(eq(users.id, storeId));
-        } catch (err: any) {
-          console.error("❌ Failed to finalize signup:", err);
-        }
-
-      }
-
       // Staff creation (Create Staff page → authClient.admin.createUser) goes
       // straight through better-auth's admin plugin — no custom controller
       // exists for it, so this was the only place to log it at all.
