@@ -1,13 +1,21 @@
 import { Request, Response } from "express";
 import status from "http-status";
 import { database } from "@/configs/connection.config";
-import { settings, users } from "@/schema/schema";
+import { account, settings, users } from "@/schema/schema";
 import { and, eq, ne } from "drizzle-orm";
 import {
   findUserByShopDomain,
   resolveRequestUser,
   resolveStoreRow,
 } from "@/middlewares/auth.middleware";
+import { auth } from "@/lib/auth";
+import { createId } from "@paralleldrive/cuid2";
+
+// Matches better-auth's own emailAndPassword defaults (see setPassword /
+// changePassword in its source) — kept in sync manually since we hash
+// through auth.$context ourselves rather than its session-gated endpoint.
+const MIN_PASSWORD_LENGTH = 8;
+const MAX_PASSWORD_LENGTH = 128;
 
 export type OnboardingStage =
   | "needs_signup"
@@ -86,12 +94,24 @@ export const completeSignupController = async (
     return;
   }
 
-  const { firstName, lastName, phone, companyName, email } = req.body ?? {};
+  const { firstName, lastName, phone, companyName, email, password } =
+    req.body ?? {};
 
-  if (!firstName || !lastName || !phone || !companyName || !email) {
+  if (!firstName || !lastName || !phone || !companyName || !email || !password) {
     res.status(status.BAD_REQUEST).json({
       message:
-        "firstName, lastName, phone, companyName, and email are all required.",
+        "firstName, lastName, phone, companyName, email, and password are all required.",
+    });
+    return;
+  }
+
+  if (
+    typeof password !== "string" ||
+    password.length < MIN_PASSWORD_LENGTH ||
+    password.length > MAX_PASSWORD_LENGTH
+  ) {
+    res.status(status.BAD_REQUEST).json({
+      message: `Password must be between ${MIN_PASSWORD_LENGTH} and ${MAX_PASSWORD_LENGTH} characters.`,
     });
     return;
   }
@@ -127,10 +147,6 @@ export const completeSignupController = async (
   // actually finishes onboarding here. Without it, a fresh store has no
   // settings row at all until someone saves the Settings page once, and
   // fetchSettings/anything reading defaults off it gets nothing back.
-  //
-  // Embedded merchants authenticate purely via the App Bridge session token
-  // (see useIdentity.ts) — there is no standalone login, so no email/password
-  // credential is created here.
   const [existingSettings] = await database
     .select({ id: settings.id })
     .from(settings)
@@ -145,6 +161,43 @@ export const completeSignupController = async (
       forceCourierSignedDelivery: false,
       photoOnDelivery: false,
       sendCancellationEmail: false,
+    });
+  }
+
+  // Give this OAuth-created row a real email/password credential, the same
+  // shape better-auth's own setPassword produces, so authClient.signIn.email
+  // works afterwards — required because EmbeddedStaffGate (see
+  // embeddedstaffgate.tsx) gates EVERY embedded user, owner included, behind
+  // a per-browser-session credential sign-in: the App Bridge token only
+  // proves "this is shop X", never which individual is using it. Its own
+  // setPassword endpoint requires an existing session (fine for a logged-in
+  // user changing their password, not for this first-time profile-completion
+  // step), so we hash through the shared password hasher via auth.$context
+  // and write the account row ourselves — this app registers no
+  // account-related databaseHooks, so that's the only thing setPassword's
+  // own code does beyond this.
+  const authContext = await auth.$context;
+  const passwordHash = await authContext.password.hash(password);
+
+  const [existingCredential] = await database
+    .select({ id: account.id })
+    .from(account)
+    .where(and(eq(account.userId, store.id), eq(account.providerId, "credential")));
+
+  if (existingCredential) {
+    await database
+      .update(account)
+      .set({ password: passwordHash, updatedAt: new Date() })
+      .where(eq(account.id, existingCredential.id));
+  } else {
+    await database.insert(account).values({
+      id: createId(),
+      userId: store.id,
+      providerId: "credential",
+      accountId: store.id,
+      password: passwordHash,
+      createdAt: new Date(),
+      updatedAt: new Date(),
     });
   }
 
