@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { env } from "@/utils/env.util";
 import { logger } from "@/utils/logger.util";
 import {
+  cancelAppSubscription,
   createAppSubscription,
   getActiveSubscriptions,
   plansForMerchant,
@@ -168,5 +169,59 @@ export const subscribeController = async (
     res
       .status(status.INTERNAL_SERVER_ERROR)
       .json({ message: error?.message || "Failed to create subscription." });
+  }
+};
+
+/**
+ * POST /api/billing/cancel — cancel the store's active app subscription.
+ * onboardingStatus only actually flips to locked once Shopify confirms via
+ * the app/subscriptions-update webhook (subscription.webhook.ts) — this just
+ * requests the cancellation.
+ */
+export const cancelSubscriptionController = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(status.UNAUTHORIZED).json({ message: "Not authenticated" });
+      return;
+    }
+
+    const store = await resolveStoreRow(req.user);
+    if (!store || !store.shopify_url || !store.shopify_access_token) {
+      res.status(status.BAD_REQUEST).json({ message: "Store is not connected." });
+      return;
+    }
+    const shopUrl = store.shopify_url;
+
+    const storeAccess = await resolveStoreShopifyAccess(req.user);
+    if (!storeAccess) {
+      res.status(status.UNAUTHORIZED).json({
+        ...SHOPIFY_TOKEN_EXPIRED_RESPONSE,
+        reAuthUrl: shopifyReAuthUrl(shopUrl),
+      });
+      return;
+    }
+    const { accessToken } = storeAccess;
+
+    const subscriptions = await getActiveSubscriptions(shopUrl, accessToken);
+    const active = subscriptions.find((s) => s.status === "ACTIVE");
+
+    if (!active) {
+      res.status(status.BAD_REQUEST).json({ message: "No active subscription to cancel." });
+      return;
+    }
+
+    await cancelAppSubscription(shopUrl, accessToken, active.id);
+
+    logger.info(`[Billing] Cancellation requested for ${shopUrl} (${active.id})`);
+
+    res.status(status.OK).json({ message: "Cancellation requested." });
+  } catch (error: any) {
+    logger.error(`[Billing] cancel error: ${error?.message || error}`);
+    res
+      .status(status.INTERNAL_SERVER_ERROR)
+      .json({ message: error?.message || "Failed to cancel subscription." });
   }
 };

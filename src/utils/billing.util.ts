@@ -238,3 +238,50 @@ export async function getActiveSubscriptions(
     response.data?.data?.currentAppInstallation?.activeSubscriptions;
   return Array.isArray(subs) ? subs : [];
 }
+
+/**
+ * Cancels a merchant's active app subscription via Shopify's Billing API.
+ * The app/subscriptions-update webhook (subscription.webhook.ts) is what
+ * actually flips onboardingStatus back to locked once Shopify confirms the
+ * cancellation — this call just requests it.
+ */
+export async function cancelAppSubscription(
+  shopUrl: string,
+  accessToken: string,
+  subscriptionId: string
+): Promise<void> {
+  const mutation = `
+    mutation AppSubscriptionCancel($id: ID!) {
+      appSubscriptionCancel(id: $id) {
+        appSubscription { id status }
+        userErrors { field message }
+      }
+    }
+  `;
+
+  const response = await axios.post(
+    graphqlEndpoint(shopUrl),
+    { query: mutation, variables: { id: subscriptionId } },
+    {
+      headers: {
+        "X-Shopify-Access-Token": accessToken,
+        "Content-Type": "application/json",
+      },
+    }
+  );
+
+  const payload = response.data?.data?.appSubscriptionCancel;
+  const topErrors = response.data?.errors;
+
+  if (topErrors) {
+    logger.error(`[Billing] Cancel GraphQL errors: ${JSON.stringify(topErrors)}`);
+    throw new Error("Shopify rejected the cancellation request.");
+  }
+
+  if (payload?.userErrors?.length) {
+    logger.error(`[Billing] Cancel userErrors: ${JSON.stringify(payload.userErrors)}`);
+    throw new Error(
+      payload.userErrors.map((e: { message: string }) => e.message).join("; ")
+    );
+  }
+}
