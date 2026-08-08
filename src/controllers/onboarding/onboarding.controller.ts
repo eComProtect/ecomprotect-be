@@ -10,6 +10,9 @@ import {
 } from "@/middlewares/auth.middleware";
 import { auth } from "@/lib/auth";
 import { createId } from "@paralleldrive/cuid2";
+import { getActiveSubscriptions } from "@/utils/billing.util";
+import { resolveStoreShopifyAccess } from "@/utils/shopify-token.util";
+import { logger } from "@/utils/logger.util";
 
 // Matches better-auth's own emailAndPassword defaults (see setPassword /
 // changePassword in its source) — kept in sync manually since we hash
@@ -55,8 +58,45 @@ export const getOnboardingStatusController = async (
   }
 
   if (owner.onboardingStatus !== "active") {
-    res.status(status.OK).json({ status: "needs_billing" satisfies OnboardingStage });
-    return;
+    // The DB only flips to "active" once Shopify's app_subscriptions/update
+    // webhook arrives and gets processed — but Shopify redirects the merchant
+    // straight back here (returnUrl in billing.controller.ts) the instant they
+    // approve, which can easily land before that webhook does. Trusting the
+    // DB alone in that window bounces a merchant who just approved billing
+    // right back to the billing page. Fall back to asking Shopify directly;
+    // if it already reports an active subscription, reconcile the DB now
+    // (the webhook, whenever it lands, is just a no-op update at that point)
+    // instead of making the merchant wait or re-approve.
+    try {
+      const access = await resolveStoreShopifyAccess(owner);
+      if (access) {
+        const subscriptions = await getActiveSubscriptions(
+          access.store.shopify_url!,
+          access.accessToken
+        );
+        if (subscriptions.some((s) => s.status === "ACTIVE")) {
+          await database
+            .update(users)
+            .set({
+              billingStatus: "active",
+              onboardingStatus: "active",
+              updatedAt: new Date(),
+            })
+            .where(eq(users.id, owner.id));
+
+          owner.onboardingStatus = "active";
+        }
+      }
+    } catch (err: any) {
+      logger.error(
+        `[Onboarding] Live subscription check failed for ${shopDomain}: ${err?.message || err}`
+      );
+    }
+
+    if (owner.onboardingStatus !== "active") {
+      res.status(status.OK).json({ status: "needs_billing" satisfies OnboardingStage });
+      return;
+    }
   }
 
   const sessionUser = await resolveRequestUser(req);
