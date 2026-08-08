@@ -5,6 +5,7 @@ import { database } from "@/configs/connection.config";
 import { orders, pendingRiskActions, users, notifications } from "@/schema/schema";
 import { verifyJwt } from "@/utils/jwt.util";
 import { emitNewNotification, emitPendingActionUpdate } from "@/service/notificationsocket.service";
+import { planHasFeature } from "@/utils/billing.util";
 
 interface WaiverTokenPayload {
   orderId: string; // raw numeric Shopify order id, as used in the URL
@@ -53,9 +54,19 @@ export const getWaiverInfo = async (req: Request, res: Response): Promise<void> 
   }
 
   const [store] = await database
-    .select({ name: users.name, shopify_url: users.shopify_url })
+    .select({ name: users.name, shopify_url: users.shopify_url, package: users.package })
     .from(users)
     .where(eq(users.id, payload.storeId));
+
+  // Waiver workflow is Shield-only — re-checked here (not just at the point
+  // the link is generated/emailed) so a store that downgraded after this
+  // link was already sent can't still have it honored.
+  if (!planHasFeature(store?.package, "waiverWorkflow")) {
+    res.status(status.FORBIDDEN).json({
+      message: "This review link is no longer available for this store.",
+    });
+    return;
+  }
 
   const [pending] = await database
     .select()
@@ -88,6 +99,18 @@ export const contestOrder = async (req: Request, res: Response): Promise<void> =
 
   if (typeof explanation !== "string" || !explanation.trim()) {
     res.status(status.BAD_REQUEST).json({ message: "Please provide a brief explanation." });
+    return;
+  }
+
+  const [contestStore] = await database
+    .select({ package: users.package })
+    .from(users)
+    .where(eq(users.id, payload.storeId));
+
+  if (!planHasFeature(contestStore?.package, "waiverWorkflow")) {
+    res.status(status.FORBIDDEN).json({
+      message: "This review link is no longer available for this store.",
+    });
     return;
   }
 

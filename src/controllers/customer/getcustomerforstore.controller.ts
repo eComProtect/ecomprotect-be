@@ -6,6 +6,7 @@ import { database } from "@/configs/connection.config";
 import axios from "axios";
 import { logger } from "@/utils/logger.util";
 import { calculateCustomerRisk } from "@/service/riskycustomer.service";
+import { planHasFeature } from "@/utils/billing.util";
 import { logActivity } from "@/service/logactivity.service";
 import { ADMIN_API_VERSION } from "@/configs/shopify.config";
 import {
@@ -81,8 +82,17 @@ export const getCustomerRefundsAcrossStores = async (
 
     // No settings row yet (store never configured Additional Configuration) —
     // calculateCustomerRisk falls back to sensible defaults rather than crashing.
-    const riskSettings = settingsResult[0];
-    const exclusionList = riskSettings?.exclusionList ?? null;
+    const rawRiskSettings = settingsResult[0];
+    const exclusionList = rawRiskSettings?.exclusionList ?? null;
+
+    // % loss-rate flagging is a Vision+ feature — enforced here (not just at
+    // save time in setting.controller.ts) so a downgrade takes effect
+    // immediately even if a higher-tier threshold is still sitting in the
+    // store's settings row from before.
+    const riskSettings =
+      rawRiskSettings && !planHasFeature(store.package, "lossRateThreshold")
+        ? { ...rawRiskSettings, lossRateThreshold: null }
+        : rawRiskSettings;
 
     const buildCustomerSyncQuery = (includeReturns: boolean) => `
       {

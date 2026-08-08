@@ -18,6 +18,7 @@ import {
 import { emitNewNotification } from "@/service/notificationsocket.service";
 import { holdOrderFulfillment, cancelShopifyOrder } from "@/service/orderaction.service";
 import { generateJwt } from "@/utils/jwt.util";
+import { planHasFeature } from "@/utils/billing.util";
 import type { IO } from "@/types/socket.types";
 
 /**
@@ -298,6 +299,13 @@ const processOrderCreate = async (
       const waiverToken = generateJwt({ orderId: String(order.id), storeId }, "30d");
       const waiverLink = `${env.FRONTEND_DOMAIN}/waiver/${order.id}?token=${waiverToken}`;
 
+      // Waiver workflow is Shield-only. Checked here (not just at save time
+      // in setting.controller.ts) so a downgrade takes effect immediately
+      // even if includeWavierLink is still sitting true from before.
+      const waiverLinkEnabled =
+        Boolean(storeSettings?.includeWavierLink) &&
+        planHasFeature(store.package, "waiverWorkflow");
+
       const storeEmailHtml = highRiskOrderNotificationTemplate({
         adminName: store.name || "Admin",
         orderName: order.name,
@@ -308,7 +316,7 @@ const processOrderCreate = async (
         includeReasonForFlag: storeSettings?.includeReasonForFlag ?? true,
         includeRecommendedAction:
           storeSettings?.includeRecommendedAction ?? true,
-        includeWavierLink: storeSettings?.includeWavierLink ?? false,
+        includeWavierLink: waiverLinkEnabled,
         orderDetails: orderDetails,
         recommendedAction,
         waiverLink,
@@ -334,7 +342,7 @@ const processOrderCreate = async (
       // sent to the merchant (via storeEmailHtml above), which meant the
       // customer had no way to even find out a screening happened, let
       // alone contest it.
-      if (storeSettings?.includeWavierLink && customerEmail) {
+      if (waiverLinkEnabled && customerEmail) {
         const customerEmailHtml = customerOrderReviewEmailTemplate({
           orderName: order.name,
           storeName: store.name || shopDomain,

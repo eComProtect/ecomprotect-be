@@ -4,6 +4,7 @@ import status from "http-status";
 import { Request, Response } from "express";
 import { eq } from "drizzle-orm";
 import { resolveStoreRow } from "@/middlewares/auth.middleware";
+import { planHasFeature } from "@/utils/billing.util";
 
 export const fetchSettings = async (
   req: Request,
@@ -30,6 +31,27 @@ export const fetchSettings = async (
       .from(settings)
       .where(eq(settings.storeId, storeId as string));
 
+    const entitlements = {
+      lossRateThreshold: planHasFeature(store.package, "lossRateThreshold"),
+      waiverWorkflow: planHasFeature(store.package, "waiverWorkflow"),
+    };
+
+    // Reflect entitlement in the returned values too — a downgrade after a
+    // higher-tier field was set shouldn't show a merchant a toggle that
+    // looks on but is actually being ignored server-side (see
+    // setting.controller.ts / order.webhook.ts, which enforce this for real).
+    const data = existing
+      ? {
+          ...existing,
+          lossRateThreshold: entitlements.lossRateThreshold
+            ? existing.lossRateThreshold
+            : null,
+          includeWavierLink: entitlements.waiverWorkflow
+            ? existing.includeWavierLink
+            : false,
+        }
+      : null;
+
     // Explicitly null, never undefined: when no settings row exists yet (a
     // brand-new store), `data: undefined` gets silently dropped by
     // JSON.stringify, and the frontend's queryFn resolving to undefined
@@ -37,7 +59,8 @@ export const fetchSettings = async (
     // settling — the page stays stuck on its loading state indefinitely.
     res.status(status.OK).json({
       message: "Settings fetched successfully",
-      data: existing ?? null,
+      data,
+      entitlements,
     });
   } catch (error) {
     res

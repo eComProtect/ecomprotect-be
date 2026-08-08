@@ -4,6 +4,7 @@ import status from "http-status";
 import { Request, Response } from "express";
 import { eq } from "drizzle-orm";
 import { resolveStoreRow } from "@/middlewares/auth.middleware";
+import { planHasFeature } from "@/utils/billing.util";
 
 export const createSettings = async (
   req: Request,
@@ -30,14 +31,14 @@ export const createSettings = async (
     const {
       lostParcelThreshold,
       lostParcelPeriod,
-      lossRateThreshold,
+      lossRateThreshold: rawLossRateThreshold,
       matchSensitivity,
       primaryAction,
       requireESignature,
       forceCourierSignedDelivery,
       photoOnDelivery,
       sendCancellationEmail,
-      includeWavierLink,
+      includeWavierLink: rawIncludeWavierLink,
 
       emailNotificationsEnabled,
       notificationEmail,
@@ -50,6 +51,16 @@ export const createSettings = async (
       exclusionList,
       actionDelayHours,
     } = req.body;
+
+    // % loss-rate flagging is Vision+, the waiver workflow is Shield-only —
+    // silently clamp rather than reject, so the rest of a settings save
+    // still goes through even if the UI let a restricted field through.
+    const lossRateThreshold = planHasFeature(store.package, "lossRateThreshold")
+      ? rawLossRateThreshold
+      : null;
+    const includeWavierLink = planHasFeature(store.package, "waiverWorkflow")
+      ? rawIncludeWavierLink
+      : false;
 
     // Explicit, targeted log for actionDelayHours specifically — this field's
     // save/read path was the subject of a mismatch investigation (settings

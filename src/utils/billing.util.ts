@@ -28,6 +28,34 @@ export interface BillingPlan {
   available: boolean;
 }
 
+/**
+ * Feature gating by plan tier. Each plan's `description` in BILLING_PLANS
+ * markets these exact capabilities (e.g. "Lost Data + % Loss Rate") — until
+ * now nothing in the codebase actually enforced that, so every merchant got
+ * every feature regardless of which plan they paid for.
+ *
+ * "waiverWorkflow" is Shield-only, and Shield is currently unpurchasable
+ * (available: false in BILLING_PLANS) — that's intentional, matching the
+ * marketing copy; the feature stays fully gated off for everyone until
+ * Shield is actually offered.
+ */
+export type PlanFeature = "lossRateThreshold" | "waiverWorkflow";
+
+const PLAN_FEATURES: Record<string, PlanFeature[]> = {
+  "ECP Insight": [],
+  "ECP Vision": ["lossRateThreshold"],
+  "ECP Shield": ["lossRateThreshold", "waiverWorkflow"],
+};
+
+/** Whether a store's current package includes a given gated feature. */
+export function planHasFeature(
+  packageName: string | null | undefined,
+  feature: PlanFeature
+): boolean {
+  if (!packageName) return false;
+  return PLAN_FEATURES[packageName]?.includes(feature) ?? false;
+}
+
 export const BILLING_PLANS: BillingPlan[] = [
   {
     name: "ECP Insight",
