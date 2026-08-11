@@ -370,7 +370,7 @@ export const resetPasswordTemplate = ({
   const textColor = "#555555";
   const cardBackgroundColor = "#ffffff";
 
-  const logoUrl = "https://your-domain.com/path-to-your-logo.png";
+  const logoUrl = "https://be.ecomprotect.co.uk/logo.png";
 
   return `
 <!DOCTYPE html>
@@ -402,7 +402,7 @@ export const resetPasswordTemplate = ({
                     <!-- Header with Logo -->
                     <tr>
                         <td style="padding: 30px; text-align: center;">
-                            <img src="${logoUrl}" alt="Canel Restaurant Logo" style="max-width: 140px;"/>
+                            <img src="${logoUrl}" alt="eComProtect Logo" style="max-width: 140px;"/>
                         </td>
                     </tr>
                     
@@ -429,7 +429,7 @@ export const resetPasswordTemplate = ({
                     <!-- Footer -->
                     <tr>
                         <td style="padding: 30px; text-align: center; font-size: 12px; color: #888888; border-top: 1px solid #e9ecef;">
-                            <p style="margin: 0;">&copy; ${new Date().getFullYear()} Canel Restaurant. All rights reserved.</p>
+                            <p style="margin: 0;">&copy; ${new Date().getFullYear()} eComProtect. All rights reserved.</p>
                         </td>
                     </tr>
 
