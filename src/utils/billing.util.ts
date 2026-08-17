@@ -57,10 +57,9 @@ export interface BillingPlan {
  * now nothing in the codebase actually enforced that, so every merchant got
  * every feature regardless of which plan they paid for.
  *
- * "waiverWorkflow" is Shield-only, and Shield is currently unpurchasable
- * (available: false in BILLING_PLANS) — that's intentional, matching the
- * marketing copy; the feature stays fully gated off for everyone until
- * Shield is actually offered.
+ * "waiverWorkflow" is Shield-only — gated off for Insight/Vision merchants,
+ * enabled automatically once a store's package becomes "ECP Shield" via a
+ * real subscription.
  */
 export type PlanFeature = "lossRateThreshold" | "waiverWorkflow";
 
@@ -111,7 +110,7 @@ export const BILLING_PLANS: BillingPlan[] = [
       "Dedicated account manager",
     ],
     prices: { "0-300": 499, "301-2,000": 899, "2,001-5,000": 1749, default: 499 },
-    available: false,
+    available: true,
   },
 ];
 
