@@ -176,6 +176,16 @@ export const completeSignupController = async (
       mobile_number: String(phone).trim(),
       company_name: String(companyName).trim(),
       onboardingStatus: "signed_up",
+      // Auto-approve instead of requiring a superadmin to manually click
+      // "Approve Store": reaching this controller already required a valid
+      // Shopify-resolved session (protectRoute — App Bridge token / OAuth),
+      // which is stronger proof of identity than clicking a link in an
+      // email ever was. Without this, EmbeddedStaffGate's forced /signin
+      // (owner included, since App Bridge alone can't distinguish
+      // individuals) rejects with "Only verified users can signin!"
+      // indefinitely, since nothing else in the embedded flow ever sets
+      // emailVerified true.
+      emailVerified: true,
       updatedAt: new Date(),
     })
     .where(eq(users.id, store.id))
