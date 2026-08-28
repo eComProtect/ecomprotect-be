@@ -10,6 +10,7 @@ import { encrypt } from "@/service/encryption.service";
 import { env } from "@/utils/env.util";
 import { logger } from "@/utils/logger.util";
 import { createId } from "@paralleldrive/cuid2";
+import { normalizeTokenExpiry } from "@/utils/shopify-token.util";
 
 type User = typeof users.$inferSelect;
 
@@ -136,7 +137,7 @@ const provisionStoreViaTokenExchange = async (
         role: "owner",
         shopify_url: shopUrl,
         shopify_access_token: encryptedToken,
-        shopify_token_expires_at: session.expires ?? null,
+        shopify_token_expires_at: normalizeTokenExpiry(session.expires),
         shopify_api_key: env.SHOPIFY_API_KEY,
         createdAt: new Date(),
         updatedAt: new Date(),

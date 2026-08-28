@@ -25,6 +25,26 @@ export function isShopifyTokenExpired(
 }
 
 /**
+ * Shopify's expiring offline access tokens have a documented 24-hour TTL, but
+ * `session.expires` returned by `migrateToExpiringToken` and `tokenExchange`
+ * is sometimes undefined in @shopify/shopify-api v13 (that field is primarily
+ * populated for online session tokens). If we naively stored null we'd hit
+ * `isShopifyTokenExpired(null) === true` on the very next request, try to
+ * re-migrate a token that Shopify already migrated, get rejected with a 400,
+ * and hand the merchant a "token expired" error immediately after install.
+ *
+ * When the SDK gives us a real expiry, use it. Otherwise fall back to 23
+ * hours from now — a conservative floor of Shopify's 24h TTL that keeps the
+ * next request from thinking the just-minted token is already expired.
+ */
+export function normalizeTokenExpiry(
+  sessionExpires: Date | null | undefined
+): Date {
+  if (sessionExpires) return new Date(sessionExpires);
+  return new Date(Date.now() + 23 * 60 * 60 * 1000);
+}
+
+/**
  * Attempts to automatically migrate a non-expiring legacy offline token to a
  * new expiring offline token using Shopify's token exchange endpoint. No
  * merchant redirect required.
@@ -68,7 +88,7 @@ export async function attemptTokenMigration(params: {
     });
 
     const newToken = session.accessToken!;
-    const newExpiry = session.expires ?? null;
+    const newExpiry = normalizeTokenExpiry(session.expires);
     const newEncryptedToken = encrypt(newToken);
 
     await database

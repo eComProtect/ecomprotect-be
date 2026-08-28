@@ -8,6 +8,7 @@ import { env } from "@/utils/env.util";
 import { logger } from "@/utils/logger.util";
 import { createId } from "@paralleldrive/cuid2";
 import { logActivity } from "@/service/logactivity.service";
+import { normalizeTokenExpiry } from "@/utils/shopify-token.util";
 
 const shopifyRouter = Router();
 
@@ -86,7 +87,7 @@ shopifyRouter.get("/callback", async (req: Request, res: Response): Promise<void
     }
 
     const accessToken = session.accessToken!;
-    const tokenExpiresAt = session.expires ?? null;
+    const tokenExpiresAt = normalizeTokenExpiry(session.expires);
     const encryptedToken = encrypt(accessToken);
 
     logger.info(`[OAuth] Callback success for shop: ${shopDomain}`);
