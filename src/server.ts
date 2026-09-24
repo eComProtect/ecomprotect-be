@@ -30,6 +30,7 @@ import billingRouter from "./routes/billing.route";
 import onboardingRouter from "./routes/onboarding.route";
 import staffRouter from "./routes/staff.route";
 import { startPendingRiskActionsScheduler } from "@/jobs/pendingriskactions.job";
+import { startSmtpKeepAliveScheduler } from "@/jobs/smtpkeepalive.job";
 
 config();
 
@@ -115,3 +116,4 @@ httpServer.listen(port as number, () => {
 });
 
 startPendingRiskActionsScheduler(io);
+startSmtpKeepAliveScheduler();
