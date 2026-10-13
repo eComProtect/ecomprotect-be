@@ -443,6 +443,86 @@ export const resetPasswordTemplate = ({
   `;
 };
 
+export const changeEmailVerificationTemplate = ({
+  userName,
+  newEmail,
+  verificationLink,
+}: {
+  userName: string;
+  newEmail: string;
+  verificationLink: string;
+}) => {
+  const primaryColor = "#1a2a4c";
+  const accentColor = "#007bff";
+  const backgroundColor = "#f0f4f8";
+  const textColor = "#555555";
+  const cardBackgroundColor = "#ffffff";
+
+  const logoUrl = "https://be.ecomprotect.co.uk/logo.png";
+
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Confirm Your Email Change</title>
+    <style>
+      @media screen and (max-width: 600px) {
+        .container {
+          width: 100% !important;
+          padding: 15px !important;
+        }
+        .content {
+          padding: 25px !important;
+        }
+      }
+    </style>
+</head>
+<body style="margin: 0; padding: 0; background-color: ${backgroundColor}; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol';">
+
+    <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%">
+        <tr>
+            <td style="padding: 20px 0;">
+                <table class="container" role="presentation" border="0" cellpadding="0" cellspacing="0" width="600" align="center" style="margin: auto; background-color: ${cardBackgroundColor}; border-radius: 12px; box-shadow: 0 6px 24px rgba(0,0,0,0.08);">
+
+                    <tr>
+                        <td style="padding: 30px; text-align: center;">
+                            <img src="${logoUrl}" alt="eComProtect Logo" style="max-width: 140px;"/>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td class="content" style="padding: 10px 40px 40px 40px; text-align: center;">
+                            <h1 style="color: ${primaryColor}; font-size: 26px; font-weight: 600; margin-bottom: 15px;">Confirm Your Email Change</h1>
+                            <p style="color: ${textColor}; font-size: 16px; line-height: 1.6;">Hello ${userName},</p>
+                            <p style="color: ${textColor}; font-size: 16px; line-height: 1.6; margin-bottom: 25px;">
+                                A request was made to change your account's email to <strong>${newEmail}</strong>.
+                                Click the button below to confirm this change. If you didn't request this, you can safely ignore this email — your current email stays unchanged.
+                            </p>
+
+                            <a href="${verificationLink}" target="_blank" style="background-color: ${accentColor}; color: #ffffff; padding: 15px 35px; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: 500; display: inline-block; border: 1px solid ${accentColor}; background-image: linear-gradient(to right, #007bff, #0056b3); box-shadow: 0 4px 12px rgba(0, 123, 255, 0.2);">
+                                Confirm Email Change
+                            </a>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td style="padding: 30px; text-align: center; font-size: 12px; color: #888888; border-top: 1px solid #e9ecef;">
+                            <p style="margin: 0;">&copy; ${new Date().getFullYear()} eComProtect. All rights reserved.</p>
+                        </td>
+                    </tr>
+
+                </table>
+            </td>
+        </tr>
+    </table>
+
+</body>
+</html>
+  `;
+};
+
 export const highRiskOrderNotificationTemplate = ({
   adminName,
   orderName,

@@ -2,17 +2,19 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { database } from "../configs/connection.config";
 import * as schema from "@/schema/schema";
 import { betterAuth } from "better-auth";
-import { APIError, createAuthMiddleware } from "better-auth/api";
+import { APIError, createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
 import { admin as adminPlugin, bearer, emailOTP } from "better-auth/plugins";
 import { env } from "@/utils/env.util";
 import {
   adminApprovalNotificationTemplate,
+  changeEmailVerificationTemplate,
   resetPasswordTemplate,
   staffInvitationTemplate,
   storeInvitationAcceptedTemplate,
 } from "@/utils/sendgrid.util";
 import { eq, sql } from "drizzle-orm";
 import { ac, manager, support, admin, superadmin, owner } from "./permission";
+import { ASSIGNABLE_STAFF_ROLES, PLATFORM_STAFF_ROLES } from "@/utils/staffroles.util";
 import { decrypt, encrypt } from "@/service/encryption.service";
 import { users } from "@/schema/schema";
 import { sendEmail } from "@/configs/brevo.config";
@@ -266,6 +268,43 @@ export const auth = betterAuth({
           });
         }
       }
+
+      // better-auth's built-in /admin/create-user only gates creation on a
+      // boolean "user:create" permission — the actual role to assign (sent
+      // here as data.role, a plain additionalField) is applied afterwards
+      // with no check at all against the caller's own role. Left alone, any
+      // staff manager with user:create (every store owner) could hand a new
+      // account role: "superadmin" or role: "admin" and self-escalate to
+      // full platform access. This restricts data.role to the same roster
+      // /api/staff enforces on edits, and keeps "admin" (platform staff,
+      // created from the admin-side Create Staff page) superadmin-only.
+      if (ctx.path === "/admin/create-user") {
+        const requestedRole = ctx.body?.data?.role;
+
+        if (requestedRole !== undefined) {
+          // createUser's own handler resolves the caller via getSessionFromCtx
+          // rather than ctx.context.session (that's only populated for
+          // endpoints that declare a session middleware in their `use` list,
+          // which create-user doesn't) — resolve it the same way here, or
+          // every caller (including a real superadmin) reads as unauthenticated.
+          const callerSession = await getSessionFromCtx(ctx).catch(() => null);
+          const callerRole = callerSession?.user?.role;
+          if (!(ASSIGNABLE_STAFF_ROLES as readonly string[]).includes(requestedRole)) {
+            throw new APIError("BAD_REQUEST", {
+              message: "Invalid role.",
+            });
+          }
+
+          if (
+            (PLATFORM_STAFF_ROLES as readonly string[]).includes(requestedRole) &&
+            callerRole !== "superadmin"
+          ) {
+            throw new APIError("FORBIDDEN", {
+              message: "Only a superadmin can assign a platform admin role.",
+            });
+          }
+        }
+      }
     }),
     after: createAuthMiddleware(async (ctx) => {
       // Staff creation (Create Staff page → authClient.admin.createUser) goes
@@ -279,6 +318,11 @@ export const auth = betterAuth({
             : null;
 
           if (createdUser) {
+            // ctx.context.session is never populated for this endpoint (see
+            // the before-hook comment above) — resolve the caller the same
+            // way, or invitedBy always logs null.
+            const callerSession = await getSessionFromCtx(ctx).catch(() => null);
+
             await logActivity({
               action: "STAFF_INVITED",
               for: "store",
@@ -286,7 +330,7 @@ export const auth = betterAuth({
               meta: {
                 invitedEmail: createdUser.email,
                 role: createdUser.role,
-                invitedBy: ctx.context.session?.user?.id ?? null,
+                invitedBy: callerSession?.user?.id ?? null,
               },
             });
           }
@@ -438,8 +482,32 @@ export const auth = betterAuth({
     },
     changeEmail: {
       enabled: true,
-      sendChangeEmailVerification: async () => {
-        // Send change email verification
+      // Sent to the CURRENT (already-verified) inbox, not the new address —
+      // proving control of the existing account is what authorizes the
+      // change, same reasoning as a password-reset link. Previously a no-op,
+      // which silently dropped every change-email request for any already-
+      // verified user (i.e. every real admin/owner) with no error surfaced.
+      sendChangeEmailVerification: async ({ user, newEmail, url }) => {
+        try {
+          const emailHtml = changeEmailVerificationTemplate({
+            userName: user.name || user.email.split("@")[0],
+            newEmail,
+            verificationLink: url,
+          });
+
+          const emailSent = await sendEmail({
+            to: user.email,
+            subject: "Confirm Your Email Change",
+            htmlContent: emailHtml,
+          });
+
+          if (!emailSent) {
+            throw new Error("Email sending failed according to utility.");
+          }
+        } catch (error) {
+          console.error("Failed to send change-email verification:", error);
+          throw new Error("Failed to send change-email verification email.");
+        }
       },
     },
     deleteUser: {

@@ -300,8 +300,13 @@ export const adminOnly = async (
   next();
 };
 
-/** Roles allowed to view/edit a store's staff roster. */
-const STAFF_MANAGER_ROLES = ["owner", "subadmin", "manager"];
+/**
+ * Roles allowed to view/edit a store's staff roster. "superadmin" is included
+ * so the platform admin team (created via the admin-side Create Staff page)
+ * can manage its own roster the same way a store owner manages theirs —
+ * resolveStoreRow treats a superadmin's own row as its "store".
+ */
+const STAFF_MANAGER_ROLES = ["owner", "subadmin", "manager", "superadmin"];
 
 export const requireStaffManager = async (
   req: Request,
