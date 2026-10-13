@@ -37,7 +37,7 @@ export const sendEmail = async (
         console.log("PROCESS ENV EMAIL:", process.env.BREVO_EMAIL);
 
         const data = await transport.sendMail({
-            from: env.BREVO_EMAIL,
+            from: options.from || `"eComProtect" <${env.BREVO_EMAIL}>`,
             to: options.to,
             subject: options.subject,
             html: options.htmlContent,
