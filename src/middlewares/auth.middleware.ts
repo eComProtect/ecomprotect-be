@@ -11,6 +11,7 @@ import { env } from "@/utils/env.util";
 import { logger } from "@/utils/logger.util";
 import { createId } from "@paralleldrive/cuid2";
 import { normalizeTokenExpiry } from "@/utils/shopify-token.util";
+import { PLATFORM_STAFF_ROLES } from "@/utils/staffroles.util";
 
 type User = typeof users.$inferSelect;
 
@@ -326,7 +327,9 @@ export const requireStaffManager = async (
 /**
  * Must run after protectRoute. Blocks dashboard access until the requesting
  * user's store has finished onboarding (signed up + billing confirmed).
- * Superadmins bypass this — they aren't scoped to any single store.
+ * Superadmins and platform staff (Platform Admin, IT Support, Project
+ * Manager) bypass this — none of them are scoped to any single store, so
+ * their own row never carries an onboardingStatus to check.
  */
 export const requireActiveOnboarding = async (
   req: Request,
@@ -341,7 +344,10 @@ export const requireActiveOnboarding = async (
     return;
   }
 
-  if (req.user.role === "superadmin") {
+  if (
+    req.user.role === "superadmin" ||
+    (PLATFORM_STAFF_ROLES as readonly string[]).includes(req.user.role ?? "")
+  ) {
     return next();
   }
 
