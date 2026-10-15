@@ -7,9 +7,12 @@ export const STORE_STAFF_ROLES = ["manager", "support", "subadmin", "marketing"]
 /**
  * Platform-level roles. Only a superadmin may assign these — "admin" grants
  * better-auth's adminRoles privileges (see lib/auth.ts), so handing it out
- * from a store-scoped flow would be a privilege escalation.
+ * from a store-scoped flow would be a privilege escalation. "it_support" and
+ * "project_manager" are platform staff like "admin" but without adminAc
+ * privileges — they're listed here only so Create Platform Admin stays
+ * superadmin-gated, not because they grant admin access.
  */
-export const PLATFORM_STAFF_ROLES = ["admin"] as const;
+export const PLATFORM_STAFF_ROLES = ["admin", "it_support", "project_manager"] as const;
 
 export const ASSIGNABLE_STAFF_ROLES = [
   ...STORE_STAFF_ROLES,

@@ -24,6 +24,12 @@ export const manager = ac.newRole({}) as any;
 
 export const support = ac.newRole({}) as any;
 
+// Platform staff roles below "admin" — no adminAc privileges, so creating one
+// via Create Platform Admin can't grant platform-wide admin access.
+export const it_support = ac.newRole({}) as any;
+
+export const project_manager = ac.newRole({}) as any;
+
 // Store owners — scoped to just creating their own staff (via /api/auth/admin/create-user).
 // Deliberately NOT granted list/ban/impersonate/delete/set-role: those better-auth admin
 // endpoints operate across all users platform-wide with no store scoping, unlike our own

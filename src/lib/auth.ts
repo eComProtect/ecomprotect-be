@@ -13,7 +13,7 @@ import {
   storeInvitationAcceptedTemplate,
 } from "@/utils/sendgrid.util";
 import { eq, sql } from "drizzle-orm";
-import { ac, manager, support, admin, superadmin, owner } from "./permission";
+import { ac, manager, support, admin, superadmin, owner, it_support, project_manager } from "./permission";
 import { ASSIGNABLE_STAFF_ROLES, PLATFORM_STAFF_ROLES } from "@/utils/staffroles.util";
 import { decrypt, encrypt } from "@/service/encryption.service";
 import { users } from "@/schema/schema";
@@ -79,6 +79,8 @@ export const auth = betterAuth({
         manager,
         support,
         owner,
+        it_support,
+        project_manager,
       },
     }),
     emailOTP({
